@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir .
 RUN mkdir -p /data
 
 ENV DATABASE_URL=sqlite+aiosqlite:////data/notdienstplaner.db
+ENV PYTHONPATH=/app
 
 EXPOSE 8000
 
