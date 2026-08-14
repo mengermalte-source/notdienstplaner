@@ -43,6 +43,11 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    return RedirectResponse("/login", status_code=302)
+
+
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, admin: User = Depends(require_admin)):
     return _templates.TemplateResponse("admin/dashboard.html",
