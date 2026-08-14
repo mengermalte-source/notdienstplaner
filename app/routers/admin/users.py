@@ -1,3 +1,4 @@
+from pathlib import Path
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -9,15 +10,16 @@ from app.models.user import User, UserRole, DoctorProfile
 from app.services.auth import hash_password
 
 router = APIRouter(prefix="/admin/users", dependencies=[Depends(require_admin)])
-templates = Jinja2Templates(directory="app/templates")
+templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates" if "admin" in str(Path(__file__)) else Path(__file__).parent.parent / "templates")
 
 
 @router.get("", response_class=HTMLResponse)
-async def users_page(request: Request, session: AsyncSession = Depends(get_session)):
+async def users_page(request: Request, session: AsyncSession = Depends(get_session),
+                     admin: User = Depends(require_admin)):
     users = (await session.exec(select(User).order_by(User.full_name))).all()
     profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
     return templates.TemplateResponse("admin/users.html",
-        {"request": request, "users": users, "profiles": profiles})
+        {"request": request, "user": admin, "users": users, "profiles": profiles})
 
 
 @router.post("/create")

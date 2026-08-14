@@ -1,3 +1,4 @@
+from pathlib import Path
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -5,22 +6,24 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from app.database import get_session
 from app.deps import require_admin
+from app.models.user import User
 from app.models.special_day import SpecialDay, SpecialDayCategory
 from app.services.holidays import get_bavarian_holidays
 
 router = APIRouter(prefix="/admin/calendar", dependencies=[Depends(require_admin)])
-templates = Jinja2Templates(directory="app/templates")
+templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates" if "admin" in str(Path(__file__)) else Path(__file__).parent.parent / "templates")
 
 
 @router.get("", response_class=HTMLResponse)
 async def calendar_page(request: Request, year: int = 2027,
-                        session: AsyncSession = Depends(get_session)):
+                        session: AsyncSession = Depends(get_session),
+                        admin: User = Depends(require_admin)):
     cats = (await session.exec(select(SpecialDayCategory))).all()
     days = (await session.exec(
         select(SpecialDay).where(SpecialDay.date.between(
             f"{year}-01-01", f"{year}-12-31")))).all()
     return templates.TemplateResponse("admin/calendar.html",
-        {"request": request, "categories": cats, "special_days": days, "year": year})
+        {"request": request, "user": admin, "categories": cats, "special_days": days, "year": year})
 
 
 @router.post("/import-holidays")

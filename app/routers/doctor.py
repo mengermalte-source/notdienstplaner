@@ -1,3 +1,4 @@
+from pathlib import Path
 from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -12,7 +13,7 @@ from app.models.schedule import ShiftAssignment, PlanningPeriod
 from app.services.ical import build_ical
 
 router = APIRouter(prefix="/me")
-templates = Jinja2Templates(directory="app/templates")
+templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates" if "admin" in str(Path(__file__)) else Path(__file__).parent.parent / "templates")
 
 
 @router.get("", response_class=HTMLResponse)
@@ -41,8 +42,7 @@ async def wishes_page(request: Request, user: User = Depends(get_current_user),
 
 @router.post("/wishes")
 async def create_wish(user: User = Depends(get_current_user),
-                      date: str = Form(...), wish_type: WishType = Form(...),
-                      priority: WishPriority = Form(WishPriority.soft),
+                      date: str = Form(...), kind: str = Form(...),
                       reason: str = Form(""),
                       session: AsyncSession = Depends(get_session)):
     d = date_type.fromisoformat(date)
@@ -51,6 +51,11 @@ async def create_wish(user: User = Depends(get_current_user),
                                 WishEntry.date == d))).first()
     if existing:
         raise HTTPException(status_code=400, detail="Für dieses Datum existiert bereits ein Wunsch")
+    wish_type, priority = {
+        "cannot":     (WishType.negative, WishPriority.hard),
+        "prefer_not": (WishType.negative, WishPriority.soft),
+        "prefer":     (WishType.positive,  WishPriority.soft),
+    }.get(kind, (WishType.negative, WishPriority.soft))
     session.add(WishEntry(user_id=user.id, date=d, wish_type=wish_type,
                            priority=priority, reason=reason))
     await session.commit()

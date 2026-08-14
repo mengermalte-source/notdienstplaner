@@ -4,42 +4,63 @@
 <h1 class="text-2xl font-bold mb-6">Willkommen, {{ user.full_name }}</h1>
 
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-  <a href="/me/schedule" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition">
-    <div class="text-3xl mb-2">&#128197;</div>
-    <div class="font-semibold">Mein Dienstplan</div>
-    <div class="text-sm text-gray-500 mt-1">{{ assignments | length }} Dienste</div>
+
+  <a href="/me/schedule" class="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-shadow">
+    <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
+      <svg class="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
+      </svg>
+    </div>
+    <div class="font-semibold text-gray-900">Mein Dienstplan</div>
+    <div class="text-sm text-gray-500 mt-0.5">{{ assignments | length }} Dienste</div>
   </a>
-  <a href="/me/wishes" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition">
-    <div class="text-3xl mb-2">&#128221;</div>
-    <div class="font-semibold">Meine Wünsche</div>
-    <div class="text-sm text-gray-500 mt-1">{{ wishes | length }} eingetragen</div>
+
+  <a href="/me/wishes" class="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-shadow">
+    <div class="w-10 h-10 bg-violet-100 rounded-lg flex items-center justify-center mb-4">
+      <svg class="w-5 h-5 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM12.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM18.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0z"/>
+      </svg>
+    </div>
+    <div class="font-semibold text-gray-900">Verfügbarkeit</div>
+    <div class="text-sm text-gray-500 mt-0.5">{{ wishes | length }} Einträge</div>
   </a>
-  <a href="/me/swaps" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition">
-    <div class="text-3xl mb-2">&#128260;</div>
-    <div class="font-semibold">Tauschbörse</div>
-    <div class="text-sm text-gray-500 mt-1">Dienste tauschen</div>
+
+  <a href="/me/swaps" class="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-shadow">
+    <div class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center mb-4">
+      <svg class="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/>
+      </svg>
+    </div>
+    <div class="font-semibold text-gray-900">Tauschbörse</div>
+    <div class="text-sm text-gray-500 mt-0.5">Dienste tauschen</div>
   </a>
+
 </div>
 
 {% if assignments %}
-<h2 class="text-lg font-semibold mb-3">Nächste Dienste</h2>
-<div class="bg-white rounded-lg shadow overflow-hidden">
+<h2 class="text-base font-semibold text-gray-700 mb-3">Nächste Dienste</h2>
+<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
   {% for a in assignments[:5] %}
-  <div class="px-4 py-3 border-b last:border-0 flex justify-between items-center">
-    <span class="font-mono">{{ a.date.strftime('%d.%m.%Y') }}</span>
+  <div class="px-5 py-3 border-b last:border-0 flex justify-between items-center">
+    <span class="font-mono text-sm text-gray-800">{{ a.date.strftime('%d.%m.%Y') }}</span>
     {% if not a.acknowledged_at %}
     <form method="post" action="/me/assignments/{{ a.id }}/acknowledge">
-      <button class="text-xs bg-green-50 border border-green-300 text-green-700 px-2 py-1 rounded">
+      <button class="text-xs bg-green-50 border border-green-200 text-green-700 px-3 py-1 rounded-full hover:bg-green-100 transition-colors">
         Bestätigen
       </button>
     </form>
     {% else %}
-    <span class="text-green-500 text-xs">&#10003; Bestätigt</span>
+    <span class="text-green-600 text-xs flex items-center gap-1">
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
+      </svg>
+      Bestätigt
+    </span>
     {% endif %}
   </div>
   {% endfor %}
 </div>
 {% else %}
-<p class="text-center text-gray-400 py-8">Noch keine Dienste geplant.</p>
+<p class="text-center text-gray-400 py-12 text-sm">Noch keine Dienste geplant.</p>
 {% endif %}
 {% endblock %}
