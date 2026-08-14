@@ -158,9 +158,92 @@ async def root():
 
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_dashboard(request: Request, admin: User = Depends(require_admin)):
-    return _templates.TemplateResponse("admin/dashboard.html",
-        {"request": request, "user": admin})
+async def admin_dashboard(
+    request: Request,
+    admin: User = Depends(require_admin),
+    session=Depends(get_session),
+):
+    from datetime import date as date_type
+    from app.models.schedule import PlanningPeriod, PlanStatus, ShiftAssignment
+    from app.models.special_day import SpecialDay, SpecialDayCategory
+    from app.models.swap import SwapRequest, SwapStatus
+    from app.models.user import UserRole, DoctorProfile
+    from app.services.fairness import compute_fairness_score
+    from sqlmodel import select
+
+    today = date_type.today()
+
+    # Doctors
+    doctors = (await session.exec(
+        select(User).where(User.role == UserRole.doctor, User.is_active == True)
+    )).all()
+    doctor_count = len(doctors)
+
+    # Latest published period
+    all_periods = (await session.exec(
+        select(PlanningPeriod).order_by(PlanningPeriod.start_date.desc())
+    )).all()
+    published = [p for p in all_periods if p.status == PlanStatus.published]
+    draft_count = sum(1 for p in all_periods if p.status == PlanStatus.draft)
+    latest = published[0] if published else None
+
+    assignments_count = 0
+    acknowledged_count = 0
+    fairness_rows: list[dict] = []
+    next_shift = None
+
+    if latest:
+        assignments = (await session.exec(
+            select(ShiftAssignment).where(ShiftAssignment.planning_period_id == latest.id)
+        )).all()
+        assignments_count = len(assignments)
+        acknowledged_count = sum(1 for a in assignments if a.acknowledged_at)
+
+        sdays_raw = (await session.exec(
+            select(SpecialDay, SpecialDayCategory).join(
+                SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id)
+        )).all()
+
+        class _SD:
+            def __init__(self, d, w): self.date = d; self.weight = w
+
+        scores = compute_fairness_score(
+            [(a.user_id, a.date) for a in assignments],
+            [_SD(sd.date, cat.weight) for sd, cat in sdays_raw],
+        )
+        profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
+        for doc in doctors:
+            fairness_rows.append({
+                "name": doc.full_name,
+                "score": round(scores.get(doc.id, 0.0), 1),
+                "factor": profiles[doc.id].part_time_factor if doc.id in profiles else 1.0,
+            })
+        fairness_rows.sort(key=lambda r: r["score"])
+
+        future = [a.date for a in assignments if a.date >= today]
+        next_shift = min(future) if future else None
+
+    # Pending swaps (accepted by target, waiting for admin)
+    pending_swaps = len((await session.exec(
+        select(SwapRequest).where(SwapRequest.status == SwapStatus.accepted)
+    )).all())
+    open_requests = len((await session.exec(
+        select(SwapRequest).where(SwapRequest.status == SwapStatus.pending)
+    )).all())
+
+    return _templates.TemplateResponse("admin/dashboard.html", {
+        "request": request, "user": admin,
+        "doctor_count": doctor_count,
+        "draft_count": draft_count,
+        "latest": latest,
+        "assignments_count": assignments_count,
+        "acknowledged_count": acknowledged_count,
+        "pending_swaps": pending_swaps,
+        "open_requests": open_requests,
+        "fairness_rows": fairness_rows,
+        "next_shift": next_shift,
+        "today": today,
+    })
 
 
 @app.get("/admin/substitute", response_class=HTMLResponse)
