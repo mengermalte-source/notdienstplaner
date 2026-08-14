@@ -1,52 +1,59 @@
 {% extends "base.html" %}
 {% block title %}Mein Dienstplan{% endblock %}
 {% block content %}
-<div class="flex justify-between items-center mb-4">
-  <h1 class="text-2xl font-bold">Mein Dienstplan</h1>
+<div class="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
+  <h1 class="text-2xl font-bold flex-1">Mein Dienstplan</h1>
   <a href="/me/schedule.ics"
-     class="text-sm bg-gray-100 border rounded px-3 py-1.5 hover:bg-gray-200">
+     class="self-start sm:self-auto text-sm bg-gray-100 border rounded-lg px-3 py-2 hover:bg-gray-200">
     Kalender exportieren (.ics)
   </a>
 </div>
 
 {% if assignments %}
 <div class="bg-white rounded-lg shadow overflow-hidden">
-  <table class="w-full text-sm">
-    <thead class="bg-gray-50 border-b">
-      <tr>
-        <th class="px-4 py-3 text-left">Datum</th>
-        <th class="px-4 py-3 text-left">Plan</th>
-        <th class="px-4 py-3 text-left">Bestätigt</th>
-        <th class="px-4 py-3"></th>
-      </tr>
-    </thead>
-    <tbody class="divide-y">
-      {% for a in assignments %}
-      <tr class="hover:bg-gray-50">
-        <td class="px-4 py-3 font-mono font-medium">{{ a.date.strftime('%d.%m.%Y') }}</td>
-        <td class="px-4 py-3 text-gray-500 text-xs">
-          {{ periods[a.planning_period_id].name if a.planning_period_id in periods else '–' }}
-        </td>
-        <td class="px-4 py-3">
-          {% if a.acknowledged_at %}
-          <span class="text-green-600 text-xs">&#10003; {{ a.acknowledged_at.strftime('%d.%m.%Y') }}</span>
-          {% else %}
-          <span class="text-gray-400 text-xs">ausstehend</span>
-          {% endif %}
-        </td>
-        <td class="px-4 py-3">
-          {% if not a.acknowledged_at %}
-          <form method="post" action="/me/assignments/{{ a.id }}/acknowledge">
-            <button class="text-xs bg-green-50 border border-green-300 text-green-700 px-2 py-1 rounded hover:bg-green-100">
-              Bestätigen
-            </button>
-          </form>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm min-w-[360px]">
+      <thead class="bg-gray-50 border-b">
+        <tr>
+          <th class="px-4 py-3 text-left">Datum</th>
+          <th class="px-4 py-3 text-left hidden sm:table-cell">Plan</th>
+          <th class="px-4 py-3 text-left">Status</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for a in assignments %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3 font-mono font-medium">{{ a.date.strftime('%d.%m.%Y') }}</td>
+          <td class="px-4 py-3 text-gray-500 text-xs hidden sm:table-cell">
+            {{ periods[a.planning_period_id].name if a.planning_period_id in periods else '–' }}
+          </td>
+          <td class="px-4 py-3">
+            {% if a.acknowledged_at %}
+            <span class="text-green-600 text-xs flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
+              </svg>
+              {{ a.acknowledged_at.strftime('%d.%m.%Y') }}
+            </span>
+            {% else %}
+            <span class="text-gray-400 text-xs">ausstehend</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3">
+            {% if not a.acknowledged_at %}
+            <form method="post" action="/me/assignments/{{ a.id }}/acknowledge">
+              <button class="text-xs bg-green-50 border border-green-300 text-green-700 px-3 py-1 rounded-full hover:bg-green-100 whitespace-nowrap">
+                Bestätigen
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% else %}
 <p class="text-center text-gray-400 py-12">Noch keine Dienste geplant.</p>

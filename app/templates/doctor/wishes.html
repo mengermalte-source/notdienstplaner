@@ -3,16 +3,16 @@
 {% block content %}
 <h1 class="text-2xl font-bold mb-6">Verfügbarkeit eintragen</h1>
 
-<form method="post" action="/me/wishes" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+<form method="post" action="/me/wishes" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1">Datum</label>
       <input type="date" name="date" required
-        class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
     </div>
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1">Verfügbarkeit</label>
-      <select name="kind" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
+      <select name="kind" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
         <option value="cannot">Kann nicht (Urlaub, Pflichttermin)</option>
         <option value="prefer_not">Lieber nicht</option>
         <option value="prefer">Möchte gerne</option>
@@ -21,7 +21,7 @@
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1">Grund (optional)</label>
       <input type="text" name="reason" placeholder="z.B. Familienfeier, Urlaub"
-        class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
     </div>
   </div>
   <button type="submit"
@@ -31,51 +31,53 @@
 </form>
 
 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-  <table class="w-full text-sm">
-    <thead>
-      <tr class="bg-gray-50 border-b border-gray-200">
-        <th class="px-4 py-3 text-left font-medium text-gray-600">Datum</th>
-        <th class="px-4 py-3 text-left font-medium text-gray-600">Verfügbarkeit</th>
-        <th class="px-4 py-3 text-left font-medium text-gray-600">Grund</th>
-        <th class="px-4 py-3"></th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-gray-100">
-      {% for wish in wishes %}
-      <tr class="hover:bg-gray-50">
-        <td class="px-4 py-3 font-mono font-medium text-gray-800">{{ wish.date.strftime('%d.%m.%Y') }}</td>
-        <td class="px-4 py-3">
-          {% if wish.wish_type == 'negative' and wish.priority == 'hard' %}
-          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
-            <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Kann nicht
-          </span>
-          {% elif wish.wish_type == 'negative' %}
-          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
-            <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>Lieber nicht
-          </span>
-          {% else %}
-          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-            <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Möchte gerne
-          </span>
-          {% endif %}
-        </td>
-        <td class="px-4 py-3 text-gray-500">{{ wish.reason or '—' }}</td>
-        <td class="px-4 py-3 text-right">
-          <form method="post" action="/me/wishes/{{ wish.id }}/delete">
-            <button class="text-gray-400 hover:text-red-500 transition-colors text-xs">Löschen</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-      {% if not wishes %}
-      <tr>
-        <td colspan="4" class="px-4 py-10 text-center text-gray-400">
-          Noch keine Einträge. Trage deine Verfügbarkeit oben ein.
-        </td>
-      </tr>
-      {% endif %}
-    </tbody>
-  </table>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm min-w-[360px]">
+      <thead>
+        <tr class="bg-gray-50 border-b border-gray-200">
+          <th class="px-4 py-3 text-left font-medium text-gray-600">Datum</th>
+          <th class="px-4 py-3 text-left font-medium text-gray-600">Verfügbarkeit</th>
+          <th class="px-4 py-3 text-left font-medium text-gray-600 hidden sm:table-cell">Grund</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for wish in wishes %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3 font-mono font-medium text-gray-800">{{ wish.date.strftime('%d.%m.%Y') }}</td>
+          <td class="px-4 py-3">
+            {% if wish.wish_type == 'negative' and wish.priority == 'hard' %}
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+              <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Kann nicht
+            </span>
+            {% elif wish.wish_type == 'negative' %}
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+              <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>Lieber nicht
+            </span>
+            {% else %}
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+              <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Möchte gerne
+            </span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-gray-500 hidden sm:table-cell">{{ wish.reason or '—' }}</td>
+          <td class="px-4 py-3 text-right">
+            <form method="post" action="/me/wishes/{{ wish.id }}/delete">
+              <button class="text-gray-400 hover:text-red-500 transition-colors text-xs">Löschen</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not wishes %}
+        <tr>
+          <td colspan="4" class="px-4 py-10 text-center text-gray-400">
+            Noch keine Einträge. Trage deine Verfügbarkeit oben ein.
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
 </div>
 
 <div class="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-100 text-sm text-blue-700">

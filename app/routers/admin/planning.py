@@ -185,21 +185,4 @@ async def publish_period(period_id: int, session: AsyncSession = Depends(get_ses
     period.published_at = datetime.utcnow()
     session.add(period)
     await session.commit()
-
-    from collections import defaultdict
-    from app.services.email import send_schedule_published
-
-    all_assignments = (await session.exec(
-        select(ShiftAssignment).where(
-            ShiftAssignment.planning_period_id == period_id))).all()
-    by_user: dict = defaultdict(list)
-    for a in all_assignments:
-        by_user[a.user_id].append(a.date)
-
-    all_users = {u.id: u for u in (await session.exec(select(User))).all()}
-    for user_id, dates in by_user.items():
-        u = all_users.get(user_id)
-        if u:
-            send_schedule_published(u.email, u.full_name, period.name, dates)
-
     return RedirectResponse(f"/admin/planning/{period_id}", status_code=302)

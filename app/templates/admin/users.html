@@ -4,23 +4,23 @@
 <h1 class="text-2xl font-bold mb-6">Benutzerverwaltung</h1>
 
 <details class="bg-white rounded-lg shadow mb-6">
-  <summary class="px-6 py-4 cursor-pointer font-medium">+ Neuer Benutzer</summary>
-  <form method="post" action="/admin/users/create" class="px-6 pb-6 grid grid-cols-2 gap-4">
-    <div>
+  <summary class="px-5 py-4 cursor-pointer font-medium select-none">+ Neuer Benutzer</summary>
+  <form method="post" action="/admin/users/create" class="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div class="sm:col-span-2">
       <label class="block text-sm font-medium mb-1">Name</label>
-      <input type="text" name="full_name" required class="w-full border rounded px-3 py-2">
+      <input type="text" name="full_name" required class="w-full border rounded-lg px-3 py-2">
     </div>
     <div>
       <label class="block text-sm font-medium mb-1">E-Mail</label>
-      <input type="email" name="email" required class="w-full border rounded px-3 py-2">
+      <input type="email" name="email" required class="w-full border rounded-lg px-3 py-2">
     </div>
     <div>
       <label class="block text-sm font-medium mb-1">Passwort</label>
-      <input type="password" name="password" required class="w-full border rounded px-3 py-2">
+      <input type="password" name="password" required class="w-full border rounded-lg px-3 py-2">
     </div>
     <div>
       <label class="block text-sm font-medium mb-1">Rolle</label>
-      <select name="role" class="w-full border rounded px-3 py-2">
+      <select name="role" class="w-full border rounded-lg px-3 py-2 bg-white">
         <option value="doctor">Arzt</option>
         <option value="admin">Administrator</option>
       </select>
@@ -28,10 +28,10 @@
     <div>
       <label class="block text-sm font-medium mb-1">Teilzeit-Faktor (0.1–1.0)</label>
       <input type="number" name="part_time_factor" value="1.0" min="0.1" max="1.0" step="0.1"
-        class="w-full border rounded px-3 py-2">
+        class="w-full border rounded-lg px-3 py-2">
     </div>
-    <div class="flex items-end">
-      <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">
+    <div class="sm:col-span-2">
+      <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
         Erstellen
       </button>
     </div>
@@ -39,46 +39,48 @@
 </details>
 
 <div class="bg-white rounded-lg shadow overflow-hidden">
-  <table class="w-full text-sm">
-    <thead class="bg-gray-50 border-b">
-      <tr>
-        <th class="px-4 py-3 text-left">Name</th>
-        <th class="px-4 py-3 text-left">E-Mail</th>
-        <th class="px-4 py-3 text-left">Rolle</th>
-        <th class="px-4 py-3 text-right">Teilzeit</th>
-        <th class="px-4 py-3 text-center">Status</th>
-        <th class="px-4 py-3"></th>
-      </tr>
-    </thead>
-    <tbody class="divide-y">
-      {% for user in users %}
-      {% set profile = profiles.get(user.id) %}
-      <tr class="hover:bg-gray-50 {% if not user.is_active %}opacity-50{% endif %}">
-        <td class="px-4 py-3 font-medium">{{ user.full_name }}</td>
-        <td class="px-4 py-3 text-gray-500">{{ user.email }}</td>
-        <td class="px-4 py-3">
-          <span class="text-xs px-2 py-0.5 rounded
-            {% if user.role == 'admin' %}bg-purple-100 text-purple-700{% else %}bg-blue-100 text-blue-700{% endif %}">
-            {{ 'Admin' if user.role == 'admin' else 'Arzt' }}
-          </span>
-        </td>
-        <td class="px-4 py-3 text-right text-gray-500">
-          {% if profile %}{{ "%.0f"|format(profile.part_time_factor * 100) }}%{% else %}—{% endif %}
-        </td>
-        <td class="px-4 py-3 text-center">
-          {% if user.is_active %}<span class="text-green-600 text-xs">Aktiv</span>
-          {% else %}<span class="text-red-500 text-xs">Inaktiv</span>{% endif %}
-        </td>
-        <td class="px-4 py-3">
-          <form method="post" action="/admin/users/{{ user.id }}/toggle-active">
-            <button class="text-xs border rounded px-2 py-1 hover:bg-gray-100">
-              {{ 'Deaktivieren' if user.is_active else 'Aktivieren' }}
-            </button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm min-w-[560px]">
+      <thead class="bg-gray-50 border-b">
+        <tr>
+          <th class="px-4 py-3 text-left">Name</th>
+          <th class="px-4 py-3 text-left">E-Mail</th>
+          <th class="px-4 py-3 text-left">Rolle</th>
+          <th class="px-4 py-3 text-right">Teilzeit</th>
+          <th class="px-4 py-3 text-center">Status</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for user in users %}
+        {% set profile = profiles.get(user.id) %}
+        <tr class="hover:bg-gray-50 {% if not user.is_active %}opacity-50{% endif %}">
+          <td class="px-4 py-3 font-medium">{{ user.full_name }}</td>
+          <td class="px-4 py-3 text-gray-500 text-xs">{{ user.email }}</td>
+          <td class="px-4 py-3">
+            <span class="text-xs px-2 py-0.5 rounded
+              {% if user.role == 'admin' %}bg-purple-100 text-purple-700{% else %}bg-blue-100 text-blue-700{% endif %}">
+              {{ 'Admin' if user.role == 'admin' else 'Arzt' }}
+            </span>
+          </td>
+          <td class="px-4 py-3 text-right text-gray-500">
+            {% if profile %}{{ "%.0f"|format(profile.part_time_factor * 100) }}%{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-center">
+            {% if user.is_active %}<span class="text-green-600 text-xs">Aktiv</span>
+            {% else %}<span class="text-red-500 text-xs">Inaktiv</span>{% endif %}
+          </td>
+          <td class="px-4 py-3">
+            <form method="post" action="/admin/users/{{ user.id }}/toggle-active">
+              <button class="text-xs border rounded px-2 py-1 hover:bg-gray-100">
+                {{ 'Deaktivieren' if user.is_active else 'Aktivieren' }}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

@@ -5,11 +5,11 @@
 
 {% if my_shifts %}
 <details class="bg-white rounded-lg shadow mb-6">
-  <summary class="px-6 py-4 cursor-pointer font-medium">+ Tausch anfragen</summary>
-  <form method="post" action="/me/swaps/request" class="px-6 pb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+  <summary class="px-5 py-4 cursor-pointer font-medium select-none">+ Tausch anfragen</summary>
+  <form method="post" action="/me/swaps/request" class="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
     <div>
       <label class="block text-sm font-medium mb-1">Mein Dienst</label>
-      <select name="my_date" class="w-full border rounded px-3 py-2">
+      <select name="my_date" class="w-full border rounded-lg px-3 py-2 bg-white">
         {% for shift in my_shifts %}
         <option value="{{ shift.date.isoformat() }}">{{ shift.date.strftime('%d.%m.%Y') }}</option>
         {% endfor %}
@@ -17,7 +17,7 @@
     </div>
     <div>
       <label class="block text-sm font-medium mb-1">Zielarzt</label>
-      <select name="target_id" class="w-full border rounded px-3 py-2">
+      <select name="target_id" class="w-full border rounded-lg px-3 py-2 bg-white">
         {% for uid, u in users.items() %}
         {% if uid != user.id %}
         <option value="{{ uid }}">{{ u.full_name }}</option>
@@ -27,14 +27,14 @@
     </div>
     <div>
       <label class="block text-sm font-medium mb-1">Datum des Zielarztes</label>
-      <input type="date" name="their_date" required class="w-full border rounded px-3 py-2">
+      <input type="date" name="their_date" required class="w-full border rounded-lg px-3 py-2">
     </div>
     <div>
       <label class="block text-sm font-medium mb-1">Nachricht (optional)</label>
-      <input type="text" name="message" class="w-full border rounded px-3 py-2">
+      <input type="text" name="message" class="w-full border rounded-lg px-3 py-2">
     </div>
-    <div class="md:col-span-2">
-      <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">
+    <div class="sm:col-span-2">
+      <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
         Tausch anfragen
       </button>
     </div>
@@ -44,18 +44,34 @@
 
 <div class="space-y-3">
   {% for swap in swaps %}
-  <div class="bg-white border rounded p-4">
-    <div class="flex justify-between items-start">
-      <div>
-        <span class="font-medium">{{ users[swap.requester_id].full_name if swap.requester_id in users else '?' }}</span>
-        <span class="text-gray-500 text-sm mx-2">möchte tauschen:</span>
-        <span class="font-mono text-sm">{{ swap.requester_shift_date.strftime('%d.%m.%Y') }}</span>
-        <span class="text-gray-400 mx-2">&#8596;</span>
-        <span class="font-mono text-sm">{{ swap.target_shift_date.strftime('%d.%m.%Y') }}</span>
-        <span class="text-gray-500 text-sm mx-2">mit</span>
-        <span class="font-medium">{{ users[swap.target_id].full_name if swap.target_id in users else '?' }}</span>
+  <div class="bg-white border rounded-lg p-4">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
+          <span class="font-medium text-gray-900">{{ users[swap.requester_id].full_name if swap.requester_id in users else '?' }}</span>
+          <span class="text-gray-400">möchte tauschen</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-sm">
+          <span class="font-mono text-gray-800">{{ swap.requester_shift_date.strftime('%d.%m.%Y') }}</span>
+          <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+          </svg>
+          <span class="font-mono text-gray-800">{{ swap.target_shift_date.strftime('%d.%m.%Y') }}</span>
+          <span class="text-gray-400">mit</span>
+          <span class="font-medium text-gray-900">{{ users[swap.target_id].full_name if swap.target_id in users else '?' }}</span>
+        </div>
+        {% if swap.message %}
+        <p class="text-sm text-gray-500 mt-1">{{ swap.message }}</p>
+        {% endif %}
+        {% if swap.target_id == user.id and swap.status == 'pending' %}
+        <form method="post" action="/me/swaps/{{ swap.id }}/accept" class="mt-2">
+          <button class="text-sm bg-blue-600 text-white px-4 py-1.5 rounded-lg hover:bg-blue-700">
+            Akzeptieren
+          </button>
+        </form>
+        {% endif %}
       </div>
-      <span class="text-xs px-2 py-0.5 rounded
+      <span class="flex-shrink-0 text-xs px-2 py-1 rounded-full
         {% if swap.status == 'admin_approved' %}bg-green-100 text-green-700
         {% elif swap.status == 'accepted' %}bg-blue-100 text-blue-700
         {% elif swap.status == 'rejected' %}bg-red-100 text-red-700
@@ -63,16 +79,6 @@
         {{ swap.status }}
       </span>
     </div>
-    {% if swap.message %}
-    <p class="text-sm text-gray-500 mt-1">{{ swap.message }}</p>
-    {% endif %}
-    {% if swap.target_id == user.id and swap.status == 'pending' %}
-    <form method="post" action="/me/swaps/{{ swap.id }}/accept" class="mt-2">
-      <button class="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">
-        Akzeptieren
-      </button>
-    </form>
-    {% endif %}
   </div>
   {% endfor %}
   {% if not swaps %}

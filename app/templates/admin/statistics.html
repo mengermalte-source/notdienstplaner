@@ -3,57 +3,59 @@
 {% block content %}
 <h1 class="text-2xl font-bold mb-4">Fairness-Statistiken</h1>
 
-<form method="get" class="mb-6 flex gap-2">
-  <select name="period_id" class="border rounded px-3 py-2">
+<form method="get" class="mb-6 flex flex-wrap gap-2">
+  <select name="period_id" class="flex-1 min-w-0 border rounded-lg px-3 py-2 bg-white">
     {% for p in periods %}
     <option value="{{ p.id }}" {% if selected and p.id == selected.id %}selected{% endif %}>
       {{ p.name }}
     </option>
     {% endfor %}
   </select>
-  <button type="submit" class="bg-gray-100 border rounded px-4 py-2 hover:bg-gray-200">Anzeigen</button>
+  <button type="submit" class="bg-gray-100 border rounded-lg px-4 py-2 hover:bg-gray-200 flex-shrink-0">Anzeigen</button>
 </form>
 
 {% if selected and doctors %}
 <div class="bg-white rounded-lg shadow overflow-hidden">
-  <table class="w-full text-sm">
-    <thead class="bg-gray-50 border-b">
-      <tr>
-        <th class="px-4 py-3 text-left">Arzt</th>
-        <th class="px-4 py-3 text-right">Dienste</th>
-        <th class="px-4 py-3 text-right">Gewichteter Score</th>
-        <th class="px-4 py-3 text-right">Teilzeit-Faktor</th>
-        <th class="px-4 py-3 text-right">Übertrag Vorjahr</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y">
-      {% for doc in doctors | sort(attribute='full_name') %}
-      {% set score = scores.get(doc.id, 0) %}
-      {% set count = duty_counts.get(doc.id, 0) %}
-      {% set profile = profiles.get(doc.id) %}
-      <tr class="hover:bg-gray-50">
-        <td class="px-4 py-3 font-medium">{{ doc.full_name }}</td>
-        <td class="px-4 py-3 text-right">{{ count }}</td>
-        <td class="px-4 py-3 text-right">
-          <div class="flex items-center justify-end gap-2">
-            {% set max_score = scores.values() | max if scores else 1 %}
-            <div class="w-24 bg-gray-200 rounded-full h-2">
-              <div class="bg-blue-500 h-2 rounded-full"
-                   style="width: {{ [(score / max_score * 100)|int, 100]|min }}%"></div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm min-w-[520px]">
+      <thead class="bg-gray-50 border-b">
+        <tr>
+          <th class="px-4 py-3 text-left">Arzt</th>
+          <th class="px-4 py-3 text-right">Dienste</th>
+          <th class="px-4 py-3 text-right hidden sm:table-cell">Gew. Score</th>
+          <th class="px-4 py-3 text-right">Teilzeit</th>
+          <th class="px-4 py-3 text-right hidden sm:table-cell">Übertrag</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for doc in doctors | sort(attribute='full_name') %}
+        {% set score = scores.get(doc.id, 0) %}
+        {% set count = duty_counts.get(doc.id, 0) %}
+        {% set profile = profiles.get(doc.id) %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3 font-medium">{{ doc.full_name }}</td>
+          <td class="px-4 py-3 text-right">{{ count }}</td>
+          <td class="px-4 py-3 text-right hidden sm:table-cell">
+            <div class="flex items-center justify-end gap-2">
+              {% set max_score = scores.values() | max if scores else 1 %}
+              <div class="w-16 bg-gray-200 rounded-full h-1.5">
+                <div class="bg-blue-500 h-1.5 rounded-full"
+                     style="width: {{ [(score / max_score * 100)|int, 100]|min }}%"></div>
+              </div>
+              <span class="tabular-nums">{{ "%.1f"|format(score) }}</span>
             </div>
-            {{ "%.1f"|format(score) }}
-          </div>
-        </td>
-        <td class="px-4 py-3 text-right text-gray-500">
-          {{ "%.0f"|format((profile.part_time_factor if profile else 1.0) * 100) }}%
-        </td>
-        <td class="px-4 py-3 text-right text-gray-500">
-          {{ "%.1f"|format(profile.carried_over_score if profile else 0) }}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+          </td>
+          <td class="px-4 py-3 text-right text-gray-500">
+            {{ "%.0f"|format((profile.part_time_factor if profile else 1.0) * 100) }}%
+          </td>
+          <td class="px-4 py-3 text-right text-gray-500 hidden sm:table-cell">
+            {{ "%.1f"|format(profile.carried_over_score if profile else 0) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% elif not periods %}
 <p class="text-center text-gray-400 py-12">Noch keine Planungsperioden vorhanden.</p>
