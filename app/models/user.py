@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
+from enum import Enum
 from sqlmodel import SQLModel, Field, Relationship
-import enum
 
 
-class UserRole(str, enum.Enum):
+class UserRole(str, Enum):
     doctor = "doctor"
     admin = "admin"
 

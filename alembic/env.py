@@ -8,6 +8,13 @@ from alembic import context
 from sqlmodel import SQLModel
 from app.config import settings
 
+# Import all models for autogenerate
+import app.models.user
+import app.models.wish
+import app.models.special_day
+import app.models.schedule
+import app.models.swap
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
@@ -57,11 +64,13 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    from app.database import engine
+    from sqlalchemy import create_engine
 
-    connectable = engine.sync_engine
+    # Use sync SQLite connection for migrations
+    db_url = settings.database_url.replace("sqlite+aiosqlite", "sqlite")
+    engine = create_engine(db_url, echo=False)
 
-    with connectable.connect() as connection:
+    with engine.connect() as connection:
         context.configure(
             connection=connection, target_metadata=target_metadata
         )
