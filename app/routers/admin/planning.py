@@ -1,9 +1,11 @@
+from pathlib import Path
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from datetime import date as date_type, datetime, timedelta
+from typing import Optional
 from app.database import get_session
 from app.deps import require_admin
 from app.models.user import User, UserRole, DoctorProfile
@@ -15,15 +17,16 @@ from app.services.fairness import compute_fairness_score
 from app.config import settings
 
 router = APIRouter(prefix="/admin/planning", dependencies=[Depends(require_admin)])
-templates = Jinja2Templates(directory="app/templates")
+templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates" if "admin" in str(Path(__file__)) else Path(__file__).parent.parent / "templates")
 
 
 @router.get("", response_class=HTMLResponse)
-async def planning_page(request: Request, session: AsyncSession = Depends(get_session)):
+async def planning_page(request: Request, session: AsyncSession = Depends(get_session),
+                        admin: User = Depends(require_admin)):
     periods = (await session.exec(
         select(PlanningPeriod).order_by(PlanningPeriod.year.desc()))).all()
     return templates.TemplateResponse("admin/planning.html",
-        {"request": request, "periods": periods, "period": None, "assignments": []})
+        {"request": request, "user": admin, "periods": periods, "period": None, "assignments": []})
 
 
 @router.post("/create")
@@ -44,7 +47,9 @@ async def create_period(name: str = Form(...), year: int = Form(...),
 
 @router.post("/{period_id}/run")
 async def run_algorithm(period_id: int, request: Request,
-                        session: AsyncSession = Depends(get_session)):
+                        coverage: str = Form("weekends"),
+                        session: AsyncSession = Depends(get_session),
+                        admin: User = Depends(require_admin)):
     period = await session.get(PlanningPeriod, period_id)
     if not period:
         return RedirectResponse("/admin/planning", status_code=302)
@@ -52,6 +57,16 @@ async def run_algorithm(period_id: int, request: Request,
     result = await session.exec(
         select(User).where(User.role == UserRole.doctor, User.is_active == True))
     doctors = result.all()
+
+    if len(doctors) < settings.doctors_per_day:
+        periods = (await session.exec(
+            select(PlanningPeriod).order_by(PlanningPeriod.year.desc()))).all()
+        return templates.TemplateResponse("admin/planning.html", {
+            "request": request, "user": admin,
+            "periods": periods, "period": None, "assignments": [],
+            "error": f"Mindestens {settings.doctors_per_day} aktive Ärzte erforderlich. "
+                     f"Aktuell: {len(doctors)}.",
+        })
 
     profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
 
@@ -62,19 +77,10 @@ async def run_algorithm(period_id: int, request: Request,
 
     doctor_objs = [DoctorWithFactor(u, profiles.get(u.id)) for u in doctors]
 
-    days = [period.start_date + timedelta(days=i)
-            for i in range((period.end_date - period.start_date).days + 1)]
-
-    wishes = (await session.exec(
-        select(WishEntry).where(
-            WishEntry.date >= period.start_date,
-            WishEntry.date <= period.end_date,
-        )
-    )).all()
-
     sdays_raw = (await session.exec(
         select(SpecialDay, SpecialDayCategory).join(
-            SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id
+            SpecialDayCategory,
+            SpecialDay.category_id == SpecialDayCategory.id
         ).where(
             SpecialDay.date >= period.start_date,
             SpecialDay.date <= period.end_date,
@@ -87,6 +93,33 @@ async def run_algorithm(period_id: int, request: Request,
             self.weight = w
 
     special_days = [SDay(sd.date, cat.weight) for sd, cat in sdays_raw]
+    special_dates = {sd.date for sd in special_days}
+
+    all_days = [period.start_date + timedelta(days=i)
+                for i in range((period.end_date - period.start_date).days + 1)]
+
+    if coverage == "weekends":
+        days = [d for d in all_days if d.weekday() >= 5]
+    elif coverage == "weekends_holidays":
+        days = [d for d in all_days if d.weekday() >= 5 or d in special_dates]
+    else:
+        days = all_days
+
+    if not days:
+        periods = (await session.exec(
+            select(PlanningPeriod).order_by(PlanningPeriod.year.desc()))).all()
+        return templates.TemplateResponse("admin/planning.html", {
+            "request": request, "user": admin,
+            "periods": periods, "period": None, "assignments": [],
+            "error": "Keine zu planenden Tage gefunden. Bitte Zeitraum oder Abdeckung prüfen.",
+        })
+
+    wishes = (await session.exec(
+        select(WishEntry).where(
+            WishEntry.date >= period.start_date,
+            WishEntry.date <= period.end_date,
+        )
+    )).all()
 
     assignments = solve_schedule(doctor_objs, days, wishes, special_days,
                                  settings.doctors_per_day)
@@ -95,11 +128,11 @@ async def run_algorithm(period_id: int, request: Request,
         periods = (await session.exec(
             select(PlanningPeriod).order_by(PlanningPeriod.year.desc()))).all()
         return templates.TemplateResponse("admin/planning.html", {
-            "request": request,
-            "periods": periods,
-            "period": None,
-            "assignments": [],
-            "error": "Kein gültiger Plan gefunden. Bitte Constraints prüfen.",
+            "request": request, "user": admin,
+            "periods": periods, "period": None, "assignments": [],
+            "error": f"Kein gültiger Plan gefunden. Ärzte: {len(doctors)}, "
+                     f"Tage: {len(days)}, Abdeckung: {coverage}. "
+                     "Bitte Constraints oder Zeitraum prüfen.",
         })
 
     old = (await session.exec(
@@ -122,7 +155,8 @@ async def run_algorithm(period_id: int, request: Request,
 
 @router.get("/{period_id}", response_class=HTMLResponse)
 async def period_detail(period_id: int, request: Request,
-                        session: AsyncSession = Depends(get_session)):
+                        session: AsyncSession = Depends(get_session),
+                        admin: User = Depends(require_admin)):
     period = await session.get(PlanningPeriod, period_id)
     assignments = (await session.exec(
         select(ShiftAssignment).where(
@@ -135,7 +169,7 @@ async def period_detail(period_id: int, request: Request,
         [(a.user_id, a.date) for a in assignments], []
     )
     return templates.TemplateResponse("admin/planning.html", {
-        "request": request,
+        "request": request, "user": admin,
         "period": period,
         "assignments": assignments,
         "users": users,
