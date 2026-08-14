@@ -15,6 +15,7 @@
         <ul class="space-y-1 text-blue-800">
           <li>• Jeder geplante Tag wird mit genau <strong>{{ doctors_per_day|default(2) }} Ärzten</strong> besetzt</li>
           <li>• Kein Arzt hat zwei <strong>aufeinanderfolgende</strong> Dienste</li>
+          <li>• Zwischen zwei Wochenend-/Feiertagsdiensten liegen immer mindestens <strong>2 dienstfreie Wochenenden</strong></li>
           <li>• Ärzte mit Eintrag <strong>„Kann nicht"</strong> werden an diesem Tag nie eingeplant</li>
           <li>• Kein Arzt überschreitet seine faire Sollzahl um mehr als 15 %</li>
         </ul>
