@@ -1,3 +1,5 @@
+import csv
+import io
 from calendar import monthcalendar
 from collections import defaultdict
 from datetime import date as date_type, datetime, timedelta
@@ -5,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -21,14 +23,13 @@ from app.services.algorithm import solve_schedule
 from app.services.fairness import compute_fairness_score, compute_target_duties
 
 router = APIRouter(prefix="/admin/planning", dependencies=[Depends(require_admin)])
-templates = Jinja2Templates(
-    directory=Path(__file__).parent.parent.parent / "templates"
-)
+templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates")
 
 _MONTH_NAMES = [
     "Januar", "Februar", "März", "April", "Mai", "Juni",
     "Juli", "August", "September", "Oktober", "November", "Dezember",
 ]
+_WEEKDAY_NAMES = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
 _DOCTOR_COLORS = [
     "bg-blue-500", "bg-emerald-500", "bg-violet-500", "bg-amber-500", "bg-rose-500",
@@ -117,10 +118,9 @@ async def run_algorithm(
     if not period:
         return RedirectResponse("/admin/planning", status_code=302)
 
-    result = await session.exec(
+    doctors = (await session.exec(
         select(User).where(User.role == UserRole.doctor, User.is_active == True)
-    )
-    doctors = result.all()
+    )).all()
 
     if len(doctors) < settings.doctors_per_day:
         periods = (await session.exec(
@@ -160,6 +160,13 @@ async def run_algorithm(
     special_days = [SDay(sd.date, cat.weight) for sd, cat in sdays_raw]
     special_dates = {sd.date for sd in special_days}
 
+    # Per-day doctor requirement overrides from special days
+    day_requirements = {
+        sd.date: sd.required_doctors
+        for sd, _ in sdays_raw
+        if sd.required_doctors is not None
+    }
+
     all_days = [
         period.start_date + timedelta(days=i)
         for i in range((period.end_date - period.start_date).days + 1)
@@ -190,7 +197,8 @@ async def run_algorithm(
     )).all()
 
     assignments = solve_schedule(
-        doctor_objs, days, wishes, special_days, settings.doctors_per_day
+        doctor_objs, days, wishes, special_days,
+        settings.doctors_per_day, day_requirements=day_requirements,
     )
 
     if assignments is None:
@@ -243,11 +251,8 @@ async def period_detail(
     scores = compute_fairness_score([(a.user_id, a.date) for a in assignments], [])
     return templates.TemplateResponse("admin/planning.html", {
         "request": request, "user": admin,
-        "period": period,
-        "assignments": assignments,
-        "users": users,
-        "scores": scores,
-        "periods": [],
+        "period": period, "assignments": assignments,
+        "users": users, "scores": scores, "periods": [],
     })
 
 
@@ -267,28 +272,103 @@ async def period_calendar(
         .where(ShiftAssignment.planning_period_id == period_id)
         .order_by(ShiftAssignment.date)
     )).all()
-
     users = {u.id: u for u in (await session.exec(select(User))).all()}
-
     duties_by_date: dict = defaultdict(list)
     for a in assignments:
         if a.user_id in users:
             duties_by_date[a.date].append(users[a.user_id])
-
     months = _build_months(period.start_date, period.end_date)
-    doctor_colors = _build_doctor_colors(users)
-
     return templates.TemplateResponse("admin/calendar_view.html", {
         "request": request, "user": admin,
-        "period": period,
-        "months": months,
+        "period": period, "months": months,
         "duties_by_date": dict(duties_by_date),
-        "doctor_colors": doctor_colors,
+        "doctor_colors": _build_doctor_colors(users),
     })
 
 
 # ---------------------------------------------------------------------------
-# Substitute finder
+# Dienstbuch (journal)
+# ---------------------------------------------------------------------------
+
+@router.get("/{period_id}/journal", response_class=HTMLResponse)
+async def period_journal(
+    period_id: int, request: Request,
+    session: AsyncSession = Depends(get_session),
+    admin: User = Depends(require_admin),
+):
+    period = await session.get(PlanningPeriod, period_id)
+    assignments = (await session.exec(
+        select(ShiftAssignment)
+        .where(ShiftAssignment.planning_period_id == period_id)
+        .order_by(ShiftAssignment.date)
+    )).all()
+    users = {u.id: u for u in (await session.exec(select(User))).all()}
+    profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
+
+    confirmed = sum(1 for a in assignments if a.acknowledged_at)
+    overridden = sum(1 for a in assignments if a.is_manual_override)
+
+    return templates.TemplateResponse("admin/journal.html", {
+        "request": request, "user": admin,
+        "period": period, "assignments": assignments,
+        "users": users, "profiles": profiles,
+        "weekday_names": _WEEKDAY_NAMES,
+        "confirmed": confirmed, "overridden": overridden,
+        "total": len(assignments),
+    })
+
+
+# ---------------------------------------------------------------------------
+# CSV-Export (KV-Abrechnung)
+# ---------------------------------------------------------------------------
+
+@router.get("/{period_id}/export.csv")
+async def export_csv(
+    period_id: int,
+    session: AsyncSession = Depends(get_session),
+    admin: User = Depends(require_admin),
+):
+    period = await session.get(PlanningPeriod, period_id)
+    assignments = (await session.exec(
+        select(ShiftAssignment)
+        .where(ShiftAssignment.planning_period_id == period_id)
+        .order_by(ShiftAssignment.date)
+    )).all()
+    users = {u.id: u for u in (await session.exec(select(User))).all()}
+    profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
+
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow(["Datum", "Wochentag", "Arzt", "E-Mail", "Teilzeit", "Gewicht", "Bestätigt"])
+
+    for a in assignments:
+        u = users.get(a.user_id)
+        if not u:
+            continue
+        profile = profiles.get(a.user_id)
+        factor = f"{int((profile.part_time_factor if profile else 1.0) * 100)}%"
+        confirmed = a.acknowledged_at.strftime("%d.%m.%Y") if a.acknowledged_at else "Nein"
+        writer.writerow([
+            a.date.strftime("%d.%m.%Y"),
+            _WEEKDAY_NAMES[a.date.weekday()],
+            u.full_name,
+            u.email,
+            factor,
+            f"{a.weighted_score:.1f}".replace(".", ","),
+            confirmed,
+        ])
+
+    output.seek(0)
+    filename = f"notdienste_{period.name.replace(' ', '_')}.csv" if period else "notdienste.csv"
+    return StreamingResponse(
+        iter([output.getvalue().encode("utf-8-sig")]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Substitute finder (per period)
 # ---------------------------------------------------------------------------
 
 @router.get("/{period_id}/substitute", response_class=HTMLResponse)
@@ -304,12 +384,10 @@ async def find_substitute(
 
     if date:
         target_date = date_type.fromisoformat(date)
-
         all_doctors = (await session.exec(
             select(User).where(User.role == UserRole.doctor, User.is_active == True)
         )).all()
         profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
-
         already_assigned = {
             a.user_id for a in (await session.exec(
                 select(ShiftAssignment).where(
@@ -318,7 +396,6 @@ async def find_substitute(
                 )
             )).all()
         }
-
         cannot_work = {
             w.user_id for w in (await session.exec(
                 select(WishEntry).where(
@@ -328,11 +405,8 @@ async def find_substitute(
                 )
             )).all()
         }
-
         all_period_assignments = (await session.exec(
-            select(ShiftAssignment).where(
-                ShiftAssignment.planning_period_id == period_id
-            )
+            select(ShiftAssignment).where(ShiftAssignment.planning_period_id == period_id)
         )).all()
         shifts_by_doctor: dict = defaultdict(list)
         for a in all_period_assignments:
@@ -344,7 +418,6 @@ async def find_substitute(
                 SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id)
         )).all()
         weight_by_date = {sd.date: cat.weight for sd, cat in sdays_raw}
-
         actual_scores: dict = defaultdict(float)
         for a in all_period_assignments:
             actual_scores[a.user_id] += weight_by_date.get(a.date, 1.0)
@@ -352,11 +425,10 @@ async def find_substitute(
         mon_target = _monday_of_week(target_date)
 
         def violates_gap(doctor_id: int) -> bool:
-            for existing in shifts_by_doctor[doctor_id]:
-                gap = abs((_monday_of_week(existing) - mon_target).days) // 7
-                if gap < 3:
-                    return True
-            return False
+            return any(
+                abs((_monday_of_week(d) - mon_target).days) // 7 < 3
+                for d in shifts_by_doctor[doctor_id]
+            )
 
         for doc in all_doctors:
             if doc.id in already_assigned:
@@ -367,22 +439,16 @@ async def find_substitute(
                 status = "gap_rule"
             else:
                 status = "available"
-
             profile = profiles.get(doc.id)
             candidates.append({
-                "user": doc,
-                "profile": profile,
-                "status": status,
+                "user": doc, "profile": profile, "status": status,
                 "score": round(actual_scores.get(doc.id, 0.0), 1),
             })
-
         candidates.sort(key=lambda c: (0 if c["status"] == "available" else 1, c["score"]))
 
     return templates.TemplateResponse("admin/substitute.html", {
         "request": request, "user": admin,
-        "period": period,
-        "target_date": target_date,
-        "candidates": candidates,
+        "period": period, "target_date": target_date, "candidates": candidates,
     })
 
 
@@ -414,18 +480,14 @@ async def publish_period(period_id: int, session: AsyncSession = Depends(get_ses
         doctors_raw = (await session.exec(
             select(User).where(User.role == UserRole.doctor, User.is_active == True)
         )).all()
-        profiles_map = {
-            p.user_id: p
-            for p in (await session.exec(select(DoctorProfile))).all()
-        }
+        profiles_map = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
 
         planned_days = len({a.date for a in all_assignments})
         total_factor = sum(
-            (profiles_map[u.id].part_time_factor if u.id in profiles_map else 1.0)
+            profiles_map[u.id].part_time_factor if u.id in profiles_map else 1.0
             for u in doctors_raw
         ) or 1.0
         total_slots = planned_days * settings.doctors_per_day
-
         actual_scores: dict = defaultdict(float)
         for a in all_assignments:
             actual_scores[a.user_id] += weight_by_date.get(a.date, 1.0)
@@ -435,8 +497,9 @@ async def publish_period(period_id: int, session: AsyncSession = Depends(get_ses
             if not profile:
                 continue
             fair_share = (profile.part_time_factor / total_factor) * total_slots
-            delta = actual_scores.get(u.id, 0.0) - fair_share
-            profile.carried_over_score = round(profile.carried_over_score + delta, 3)
+            profile.carried_over_score = round(
+                profile.carried_over_score + (actual_scores.get(u.id, 0.0) - fair_share), 3
+            )
             session.add(profile)
 
     await session.commit()

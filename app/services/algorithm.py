@@ -15,6 +15,7 @@ def solve_schedule(
     doctors_per_day: int = 2,
     time_limit_seconds: int = 30,
     min_free_weekends_between: int = 2,
+    day_requirements: dict | None = None,
 ) -> list[tuple[int, date]] | None:
 
     model = cp_model.CpModel()
@@ -25,9 +26,11 @@ def solve_schedule(
     x = {(doc.id, i): model.new_bool_var(f"x_{doc.id}_{i}")
          for doc in doctors for i in range(n_days)}
 
-    # Each planned day gets exactly the required number of doctors
-    for i in range(n_days):
-        model.add(sum(x[did, i] for did in doctor_ids) == doctors_per_day)
+    # Per-day staffing requirement (supports special days with more/fewer doctors)
+    day_req = day_requirements or {}
+    for i, day in enumerate(days):
+        req = day_req.get(day, doctors_per_day)
+        model.add(sum(x[did, i] for did in doctor_ids) == req)
 
     # No two consecutive planned days for the same doctor
     for doc in doctors:
@@ -55,16 +58,16 @@ def solve_schedule(
                 if is_weekend_or_holiday(days[j]):
                     model.add(x[doc.id, i] + x[doc.id, j] <= 1)
 
-    # Fair-share targets for this period
-    targets = compute_target_duties(doctors, n_days, doctors_per_day)
+    # Fair-share targets based on actual total slots (respects per-day overrides)
+    total_slots = sum(day_req.get(day, doctors_per_day) for day in days)
+    targets = compute_target_duties(doctors, total_slots)
 
-    # Maximum duties: ~15% above fair share (ceiling)
+    # Maximum: ~15% above fair share
     for doc in doctors:
         max_duties = int(targets[doc.id] * 1.15) + 2
         model.add(sum(x[doc.id, i] for i in range(n_days)) <= max_duties)
 
-    # Minimum duties: 70% of fair share, but only when the doctor is expected
-    # to work at least 1 shift (avoids infeasibility in short periods)
+    # Minimum: 70% of fair share (only when expected ≥1 shift)
     for doc in doctors:
         target = targets[doc.id]
         if target >= 1.0:
@@ -76,8 +79,7 @@ def solve_schedule(
         if wish.wish_type == "negative" and wish.priority == "hard" and wish.date in day_idx:
             model.add(x[wish.user_id, day_idx[wish.date]] == 0)
 
-    # Objective: minimise weighted fairness deviation (adjusted by carryover from
-    # previous periods) + soft-wish violations; maximise positive wishes
+    # Objective: minimise fairness deviation (adjusted by carryover) + soft violations
     weight_by_date = {sd.date: int(sd.weight * 100) for sd in special_days}
 
     fairness_penalties = []
@@ -87,8 +89,6 @@ def solve_schedule(
             for i in range(n_days)
         )
         target_scaled = int(targets[doc.id] * 100)
-        # Subtract carryover: doctors who worked more in the past get a lower
-        # effective target so the algorithm compensates automatically.
         carryover_scaled = int(getattr(doc, "carried_over_score", 0.0) * 100)
         adjusted_target = target_scaled - carryover_scaled
 

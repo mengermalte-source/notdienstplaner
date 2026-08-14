@@ -12,7 +12,7 @@ from app.models.swap import SwapRequest, SwapStatus
 from app.models.schedule import ShiftAssignment
 
 router = APIRouter()
-templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates" if "admin" in str(Path(__file__)) else Path(__file__).parent.parent / "templates")
+templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
 
 
 @router.get("/me/swaps", response_class=HTMLResponse)
@@ -31,6 +31,24 @@ async def swaps_page(request: Request, user: User = Depends(get_current_user),
         "request": request, "user": user, "swaps": my_swaps,
         "users": users, "my_shifts": my_shifts,
     })
+
+
+@router.get("/me/swaps/pending-count")
+async def pending_swap_count(user: User = Depends(get_current_user),
+                              session: AsyncSession = Depends(get_session)):
+    count = len((await session.exec(
+        select(SwapRequest).where(
+            SwapRequest.target_id == user.id,
+            SwapRequest.status == SwapStatus.pending,
+        )
+    )).all())
+    if count > 0:
+        return HTMLResponse(
+            f'<span class="ml-auto bg-rose-500 text-white text-[10px] font-bold '
+            f'rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">'
+            f'{count}</span>'
+        )
+    return HTMLResponse("")
 
 
 @router.post("/me/swaps/request")

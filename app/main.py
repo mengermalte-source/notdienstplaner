@@ -5,7 +5,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from app.database import init_db
+from app.database import init_db, get_session
 
 _BASE = Path(__file__).parent
 from app.routers.auth import router as auth_router
@@ -161,6 +161,23 @@ async def root():
 async def admin_dashboard(request: Request, admin: User = Depends(require_admin)):
     return _templates.TemplateResponse("admin/dashboard.html",
         {"request": request, "user": admin})
+
+
+@app.get("/admin/substitute", response_class=HTMLResponse)
+async def admin_substitute_landing(
+    request: Request,
+    admin: User = Depends(require_admin),
+    session=Depends(get_session),
+):
+    from app.models.schedule import PlanningPeriod, PlanStatus
+    from sqlmodel import select
+    periods = (await session.exec(
+        select(PlanningPeriod).order_by(PlanningPeriod.start_date.desc())
+    )).all()
+    published = [p for p in periods if p.status == PlanStatus.published]
+    return _templates.TemplateResponse("admin/substitute_landing.html", {
+        "request": request, "user": admin, "periods": published,
+    })
 
 
 if __name__ == "__main__":

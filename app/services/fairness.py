@@ -13,7 +13,6 @@ def compute_fairness_score(
     return dict(scores)
 
 
-def compute_target_duties(doctors, total_days: int, doctors_per_day: int) -> dict[int, float]:
-    total_factor = sum(d.part_time_factor for d in doctors)
-    total_assignments = total_days * doctors_per_day
-    return {d.id: (d.part_time_factor / total_factor) * total_assignments for d in doctors}
+def compute_target_duties(doctors, total_slots: int) -> dict[int, float]:
+    total_factor = sum(d.part_time_factor for d in doctors) or 1.0
+    return {d.id: (d.part_time_factor / total_factor) * total_slots for d in doctors}

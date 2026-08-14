@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Dienstbuch{% endblock %}
+{% block content %}
+
+<div class="mb-6 flex flex-wrap items-start justify-between gap-4">
+  <div>
+    <a href="/admin/planning/{{ period.id }}" class="text-sm text-blue-600 hover:underline">← Zurück zum Plan</a>
+    <h1 class="text-2xl font-bold mt-1">Dienstbuch</h1>
+    <p class="text-sm text-gray-500 mt-0.5">{{ period.name }} · {{ period.start_date.strftime('%d.%m.%Y') }} – {{ period.end_date.strftime('%d.%m.%Y') }}</p>
+  </div>
+  <a href="/admin/planning/{{ period.id }}/export.csv"
+     class="inline-flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 text-sm font-medium">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+    </svg>
+    CSV Export
+  </a>
+</div>
+
+<!-- Summary cards -->
+<div class="grid grid-cols-3 gap-4 mb-6">
+  <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+    <p class="text-2xl font-bold text-gray-900">{{ total }}</p>
+    <p class="text-xs text-gray-500 mt-1">Dienste gesamt</p>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+    <p class="text-2xl font-bold text-green-600">{{ confirmed }}</p>
+    <p class="text-xs text-gray-500 mt-1">Bestätigt</p>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+    <p class="text-2xl font-bold text-amber-600">{{ overridden }}</p>
+    <p class="text-xs text-gray-500 mt-1">Manuell überschrieben</p>
+  </div>
+</div>
+
+<!-- Assignment table -->
+<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b border-gray-100 bg-gray-50">
+        <th class="text-left px-4 py-3 font-semibold text-gray-600">Datum</th>
+        <th class="text-left px-4 py-3 font-semibold text-gray-600">Wochentag</th>
+        <th class="text-left px-4 py-3 font-semibold text-gray-600">Arzt</th>
+        <th class="text-left px-4 py-3 font-semibold text-gray-600 hidden sm:table-cell">Gewicht</th>
+        <th class="text-left px-4 py-3 font-semibold text-gray-600 hidden md:table-cell">Status</th>
+        <th class="text-left px-4 py-3 font-semibold text-gray-600 hidden lg:table-cell">Bestätigt am</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for a in assignments %}
+      {% set u = users.get(a.user_id) %}
+      <tr class="hover:bg-gray-50 {% if a.is_manual_override %}bg-amber-50{% endif %}">
+        <td class="px-4 py-3 font-mono text-xs text-gray-600 whitespace-nowrap">{{ a.date.strftime('%d.%m.%Y') }}</td>
+        <td class="px-4 py-3 text-gray-600 text-xs">{{ weekday_names[a.date.weekday()] }}</td>
+        <td class="px-4 py-3">
+          {% if u %}
+          <span class="font-medium text-gray-900">{{ u.full_name }}</span>
+          {% else %}
+          <span class="text-gray-400 italic">Unbekannt</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 hidden sm:table-cell text-gray-500">{{ "%.1f"|format(a.weighted_score) }}</td>
+        <td class="px-4 py-3 hidden md:table-cell">
+          {% if a.is_manual_override %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">Manuell</span>
+          {% else %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-2 py-0.5">Algorithmus</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 hidden lg:table-cell text-xs text-gray-500">
+          {% if a.acknowledged_at %}
+          <span class="text-green-600 font-medium">{{ a.acknowledged_at.strftime('%d.%m.%Y') }}</span>
+          {% else %}
+          <span class="text-gray-400">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if not assignments %}
+  <p class="text-center text-gray-400 py-10">Keine Dienste in diesem Zeitraum.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

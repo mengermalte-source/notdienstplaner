@@ -1,9 +1,10 @@
 from pathlib import Path
-from fastapi import APIRouter, Depends, Request, Form
+from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
+from typing import Optional
 from app.database import get_session
 from app.deps import require_admin
 from app.models.user import User
@@ -11,7 +12,7 @@ from app.models.special_day import SpecialDay, SpecialDayCategory
 from app.services.holidays import get_bavarian_holidays
 
 router = APIRouter(prefix="/admin/calendar", dependencies=[Depends(require_admin)])
-templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates" if "admin" in str(Path(__file__)) else Path(__file__).parent.parent / "templates")
+templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates")
 
 
 @router.get("", response_class=HTMLResponse)
@@ -54,5 +55,28 @@ async def add_special_day(date: str = Form(...), category_id: int = Form(...),
     from datetime import date as date_type
     session.add(SpecialDay(date=date_type.fromisoformat(date),
                            category_id=category_id, label=label))
+    await session.commit()
+    return RedirectResponse("/admin/calendar", status_code=302)
+
+
+@router.post("/days/{day_id}/delete")
+async def delete_special_day(day_id: int, session: AsyncSession = Depends(get_session)):
+    day = await session.get(SpecialDay, day_id)
+    if not day:
+        raise HTTPException(status_code=404)
+    await session.delete(day)
+    await session.commit()
+    return RedirectResponse("/admin/calendar", status_code=302)
+
+
+@router.post("/days/{day_id}/set-doctors")
+async def set_day_doctors(day_id: int,
+                           required_doctors: Optional[int] = Form(None),
+                           session: AsyncSession = Depends(get_session)):
+    day = await session.get(SpecialDay, day_id)
+    if not day:
+        raise HTTPException(status_code=404)
+    day.required_doctors = required_doctors if required_doctors and required_doctors > 0 else None
+    session.add(day)
     await session.commit()
     return RedirectResponse("/admin/calendar", status_code=302)
