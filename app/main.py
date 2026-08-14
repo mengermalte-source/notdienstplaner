@@ -19,7 +19,26 @@ from app.models.user import User
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await _ensure_admin()
     yield
+
+
+async def _ensure_admin():
+    from app.database import AsyncSessionLocal
+    from app.models.user import User, UserRole
+    from app.services.auth import hash_password
+    from sqlmodel import select
+    async with AsyncSessionLocal() as session:
+        existing = (await session.exec(select(User).where(User.role == UserRole.admin))).first()
+        if not existing:
+            session.add(User(
+                email="admin",
+                hashed_password=hash_password("admin"),
+                full_name="Administrator",
+                role=UserRole.admin,
+            ))
+            await session.commit()
+            print("Admin-Account angelegt: admin / admin")
 
 
 app = FastAPI(title="Notdienstplaner", lifespan=lifespan)
