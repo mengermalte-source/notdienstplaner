@@ -18,6 +18,7 @@
           <li>• Zwischen zwei Wochenend-/Feiertagsdiensten liegen immer mindestens <strong>2 dienstfreie Wochenenden</strong></li>
           <li>• Ärzte mit Eintrag <strong>„Kann nicht"</strong> werden an diesem Tag nie eingeplant</li>
           <li>• Kein Arzt überschreitet seine faire Sollzahl um mehr als 15 %</li>
+          <li>• Jeder Arzt mit einer Sollzahl ≥ 1 übernimmt mindestens <strong>70 % seiner fairen Dienste</strong></li>
         </ul>
       </div>
       <div>
@@ -27,6 +28,7 @@
           <li>• <strong>„Lieber nicht"</strong>-Wünsche werden als Malus gewertet und möglichst vermieden</li>
           <li>• <strong>„Möchte gerne"</strong>-Wünsche werden bevorzugt berücksichtigt</li>
           <li>• <strong>Feiertage</strong> zählen schwerer im Fairness-Score (Gewicht 2,5×)</li>
+          <li>• <strong>Übertrag:</strong> Mehr- oder Minderdienste aus der Vorperiode fließen automatisch in die nächste Planung ein</li>
         </ul>
       </div>
     </div>
@@ -87,10 +89,28 @@
 </div>
 
 {% else %}
-<div class="mb-4">
-  <a href="/admin/planning" class="text-blue-600 hover:underline text-sm">← Zurück zur Übersicht</a>
-  <h2 class="text-xl font-semibold mt-2">{{ period.name }}</h2>
-  <p class="text-sm text-gray-500">{{ period.start_date.strftime('%d.%m.%Y') }} – {{ period.end_date.strftime('%d.%m.%Y') }}</p>
+<div class="mb-4 flex flex-col sm:flex-row sm:items-start gap-3">
+  <div class="flex-1 min-w-0">
+    <a href="/admin/planning" class="text-blue-600 hover:underline text-sm">← Zurück zur Übersicht</a>
+    <h2 class="text-xl font-semibold mt-2">{{ period.name }}</h2>
+    <p class="text-sm text-gray-500">{{ period.start_date.strftime('%d.%m.%Y') }} – {{ period.end_date.strftime('%d.%m.%Y') }}</p>
+  </div>
+  <div class="flex gap-2 flex-shrink-0">
+    <a href="/admin/planning/{{ period.id }}/calendar"
+       class="text-sm bg-white border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50 flex items-center gap-1.5">
+      <svg class="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+      </svg>
+      Kalender
+    </a>
+    <a href="/admin/planning/{{ period.id }}/substitute"
+       class="text-sm bg-white border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50 flex items-center gap-1.5">
+      <svg class="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+      Vertretung
+    </a>
+  </div>
 </div>
 
 <div class="flex flex-wrap gap-3 mb-6">
