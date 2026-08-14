@@ -27,9 +27,10 @@ async def _ensure_admin():
     from app.database import AsyncSessionLocal
     from app.models.user import User, UserRole
     from app.services.auth import hash_password
-    from sqlmodel import select
+    from sqlalchemy import select as sa_select
     async with AsyncSessionLocal() as session:
-        existing = (await session.exec(select(User).where(User.role == UserRole.admin))).first()
+        result = await session.execute(sa_select(User).where(User.role == UserRole.admin))
+        existing = result.scalars().first()
         if not existing:
             session.add(User(
                 email="admin",
