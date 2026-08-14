@@ -8,8 +8,8 @@ async def main():
     await init_db()
     async with AsyncSessionLocal() as session:
         admin = User(
-            email="admin@example.com",
-            hashed_password=hash_password("admin123"),
+            email="admin",
+            hashed_password=hash_password("admin"),
             full_name="Administrator",
             role=UserRole.admin,
         )
