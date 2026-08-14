@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Planung{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Notdienstplanung</h1>
+
+{% if error %}
+<div class="bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded mb-4">{{ error }}</div>
+{% endif %}
+
+{% if not period %}
+<form method="post" action="/admin/planning/create"
+      class="bg-white rounded-lg shadow p-6 mb-6 grid grid-cols-2 md:grid-cols-3 gap-4">
+  <div class="md:col-span-3">
+    <label class="block text-sm font-medium mb-1">Name</label>
+    <input type="text" name="name" placeholder="Notdienstplan 2027" required
+      class="w-full border rounded px-3 py-2">
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Jahr</label>
+    <input type="number" name="year" value="2027" required class="w-full border rounded px-3 py-2">
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Von</label>
+    <input type="date" name="start_date" required class="w-full border rounded px-3 py-2">
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Bis</label>
+    <input type="date" name="end_date" required class="w-full border rounded px-3 py-2">
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Wunsch-Deadline</label>
+    <input type="date" name="wish_deadline" class="w-full border rounded px-3 py-2">
+  </div>
+  <div class="md:col-span-3">
+    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">
+      Planungsperiode erstellen
+    </button>
+  </div>
+</form>
+
+<div class="space-y-2">
+  {% for p in periods %}
+  <div class="bg-white border rounded p-4 flex justify-between items-center">
+    <div>
+      <span class="font-semibold">{{ p.name }}</span>
+      <span class="ml-3 text-sm text-gray-500">{{ p.start_date.strftime('%d.%m.%Y') }} – {{ p.end_date.strftime('%d.%m.%Y') }}</span>
+      <span class="ml-2 text-xs px-2 py-0.5 rounded
+        {% if p.status == 'published' %}bg-green-100 text-green-700
+        {% elif p.status == 'draft' %}bg-yellow-100 text-yellow-700
+        {% else %}bg-gray-100 text-gray-500{% endif %}">{{ p.status }}</span>
+    </div>
+    <a href="/admin/planning/{{ p.id }}" class="text-blue-600 hover:underline text-sm">Öffnen</a>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="mb-4">
+  <a href="/admin/planning" class="text-blue-600 hover:underline text-sm">← Zurück zur Übersicht</a>
+  <h2 class="text-xl font-semibold mt-2">{{ period.name }}</h2>
+  <p class="text-sm text-gray-500">{{ period.start_date.strftime('%d.%m.%Y') }} – {{ period.end_date.strftime('%d.%m.%Y') }}</p>
+</div>
+
+<div class="flex gap-3 mb-6">
+  <form method="post" action="/admin/planning/{{ period.id }}/run">
+    <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">
+      Algorithmus ausführen
+    </button>
+  </form>
+  {% if period.status == 'draft' and assignments %}
+  <form method="post" action="/admin/planning/{{ period.id }}/publish">
+    <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+      Plan freigeben & benachrichtigen
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+{% if assignments %}
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b">
+      <tr>
+        <th class="px-4 py-3 text-left">Datum</th>
+        <th class="px-4 py-3 text-left">Arzt</th>
+        <th class="px-4 py-3 text-left">Gewicht</th>
+        <th class="px-4 py-3 text-left">Override</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y">
+      {% for a in assignments %}
+      <tr class="hover:bg-gray-50 {% if a.is_manual_override %}bg-yellow-50{% endif %}">
+        <td class="px-4 py-2 font-mono">{{ a.date.strftime('%d.%m.%Y') }}</td>
+        <td class="px-4 py-2">{{ users[a.user_id].full_name if a.user_id in users else '?' }}</td>
+        <td class="px-4 py-2 text-gray-500">{{ "%.1f"|format(a.weighted_score) }}</td>
+        <td class="px-4 py-2 text-xs text-orange-500">
+          {% if a.is_manual_override %}Manuell{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-gray-400 text-center py-12">Noch kein Plan berechnet. Algorithmus ausführen.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

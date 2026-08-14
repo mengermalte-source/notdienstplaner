@@ -1,6 +1,6 @@
 from fastapi import Request, HTTPException, Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy import select
+from sqlmodel import select
 from app.database import get_session
 from app.models.user import User, UserRole
 from app.services.auth import decode_token

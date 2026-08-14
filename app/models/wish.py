@@ -20,8 +20,8 @@ class WishEntry(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)
     date: Date = Field(index=True)
-    wish_type: str = "positive"
-    priority: str = Field(default="soft")
+    wish_type: WishType = Field(default=WishType.positive)
+    priority: WishPriority = Field(default=WishPriority.soft)
     reason: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
     planning_period_id: Optional[int] = Field(default=None, foreign_key="planningperiod.id")

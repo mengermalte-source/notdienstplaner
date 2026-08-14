@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Admin-Bereich</h1>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+  <a href="/admin/users" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition">
+    <div class="text-3xl mb-2">&#128101;</div>
+    <div class="font-semibold">Benutzer</div>
+    <div class="text-sm text-gray-500">Ärzte verwalten</div>
+  </a>
+  <a href="/admin/calendar" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition">
+    <div class="text-3xl mb-2">&#128390;</div>
+    <div class="font-semibold">Kalender</div>
+    <div class="text-sm text-gray-500">Sondertage konfigurieren</div>
+  </a>
+  <a href="/admin/planning" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition">
+    <div class="text-3xl mb-2">&#128203;</div>
+    <div class="font-semibold">Planung</div>
+    <div class="text-sm text-gray-500">Notdienstpläne erstellen</div>
+  </a>
+  <a href="/admin/statistics" class="bg-white rounded-lg shadow p-6 hover:shadow-md transition">
+    <div class="text-3xl mb-2">&#128202;</div>
+    <div class="font-semibold">Statistiken</div>
+    <div class="text-sm text-gray-500">Fairness-Übersicht</div>
+  </a>
+</div>
+{% endblock %}

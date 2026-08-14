@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy import select
+from sqlmodel import select
 from app.database import get_session
 from app.models.user import User
 from app.services.auth import verify_password, create_access_token

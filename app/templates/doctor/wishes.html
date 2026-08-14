@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Meine Wünsche{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Wünsche eingeben</h1>
+
+<form method="post" action="/me/wishes" class="bg-white rounded-lg shadow p-6 mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+  <div>
+    <label class="block text-sm font-medium text-gray-700 mb-1">Datum</label>
+    <input type="date" name="date" required
+      class="w-full border border-gray-300 rounded px-3 py-2">
+  </div>
+  <div>
+    <label class="block text-sm font-medium text-gray-700 mb-1">Art</label>
+    <select name="wish_type" class="w-full border border-gray-300 rounded px-3 py-2">
+      <option value="negative">Frei (möchte nicht)</option>
+      <option value="positive">Dienst (möchte gerne)</option>
+    </select>
+  </div>
+  <div>
+    <label class="block text-sm font-medium text-gray-700 mb-1">Priorität</label>
+    <select name="priority" class="w-full border border-gray-300 rounded px-3 py-2">
+      <option value="soft">Wunsch</option>
+      <option value="hard">Pflicht (z.B. Urlaub)</option>
+    </select>
+  </div>
+  <div>
+    <label class="block text-sm font-medium text-gray-700 mb-1">Grund (optional)</label>
+    <input type="text" name="reason" placeholder="z.B. Familienfeier"
+      class="w-full border border-gray-300 rounded px-3 py-2">
+  </div>
+  <div class="md:col-span-4">
+    <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">
+      Wunsch speichern
+    </button>
+  </div>
+</form>
+
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b">
+      <tr>
+        <th class="px-4 py-3 text-left">Datum</th>
+        <th class="px-4 py-3 text-left">Art</th>
+        <th class="px-4 py-3 text-left">Priorität</th>
+        <th class="px-4 py-3 text-left">Grund</th>
+        <th class="px-4 py-3"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y">
+      {% for wish in wishes %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 font-mono">{{ wish.date.strftime('%d.%m.%Y') }}</td>
+        <td class="px-4 py-3">
+          {% if wish.wish_type == 'negative' %}
+          <span class="text-red-600">Frei</span>
+          {% else %}
+          <span class="text-green-600">Dienst</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3">
+          {% if wish.priority == 'hard' %}<span class="font-semibold">Pflicht</span>
+          {% else %}Wunsch{% endif %}
+        </td>
+        <td class="px-4 py-3 text-gray-500">{{ wish.reason }}</td>
+        <td class="px-4 py-3">
+          <form method="post" action="/me/wishes/{{ wish.id }}/delete">
+            <button class="text-red-500 hover:text-red-700 text-xs">Löschen</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not wishes %}
+      <tr><td colspan="5" class="px-4 py-6 text-center text-gray-400">Noch keine Wünsche eingetragen</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

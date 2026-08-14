@@ -6,7 +6,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from app.database import init_db
 from app.routers.auth import router as auth_router
-from app.deps import get_current_user
+from app.routers.doctor import router as doctor_router
+from app.routers.swap import router as swap_router
+from app.routers.admin.calendar import router as calendar_router
+from app.routers.admin.planning import router as planning_router
+from app.routers.admin.stats import router as stats_router
+from app.routers.admin.users import router as users_router
+from app.deps import require_admin
 from app.models.user import User
 
 
@@ -18,8 +24,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Notdienstplaner", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+
+_templates = Jinja2Templates(directory="app/templates")
+
 app.include_router(auth_router)
+app.include_router(doctor_router)
+app.include_router(swap_router)
+app.include_router(calendar_router)
+app.include_router(planning_router)
+app.include_router(stats_router)
+app.include_router(users_router)
 
 
 @app.exception_handler(HTTPException)
@@ -29,6 +43,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
-@app.get("/me", response_class=HTMLResponse)
-async def me(current_user: User = Depends(get_current_user)):
-    return HTMLResponse(f"<h1>Willkommen, {current_user.full_name}</h1>")
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_dashboard(request: Request, admin: User = Depends(require_admin)):
+    return _templates.TemplateResponse("admin/dashboard.html",
+        {"request": request, "user": admin})
