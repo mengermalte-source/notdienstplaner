@@ -13,7 +13,10 @@ async def get_current_user(request: Request, session: AsyncSession = Depends(get
     payload = decode_token(token)
     if not payload:
         raise HTTPException(status_code=302, headers={"Location": "/login"})
-    result = await session.exec(select(User).where(User.id == payload.get("sub")))
+    sub = payload.get("sub")
+    if not sub:
+        raise HTTPException(status_code=302, headers={"Location": "/login"})
+    result = await session.exec(select(User).where(User.id == int(sub)))
     user = result.first()
     if not user or not user.is_active:
         raise HTTPException(status_code=302, headers={"Location": "/login"})
