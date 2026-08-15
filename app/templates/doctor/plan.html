@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Gesamtplan{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-2">Dienstplan</h1>
+
+{% if period %}
+<p class="text-sm text-gray-500 mb-6">{{ period.name }} &nbsp;·&nbsp; {{ period.start_date.strftime('%d.%m.%Y') }} – {{ period.end_date.strftime('%d.%m.%Y') }}</p>
+
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm min-w-[360px]">
+      <thead class="bg-gray-50 border-b">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium text-gray-600">Datum</th>
+          <th class="px-4 py-3 text-left font-medium text-gray-600 hidden sm:table-cell">Wochentag</th>
+          <th class="px-4 py-3 text-left font-medium text-gray-600">Arzt</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% set weekdays = ["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"] %}
+        {% for a in assignments %}
+        {% set doc = users_map.get(a.user_id) %}
+        <tr class="{% if a.user_id == user.id %}bg-primary-50 font-semibold{% else %}hover:bg-gray-50{% endif %}">
+          <td class="px-4 py-2 font-mono text-gray-800">{{ a.date.strftime('%d.%m.%Y') }}</td>
+          <td class="px-4 py-2 text-gray-500 hidden sm:table-cell">{{ weekdays[a.date.weekday()] }}</td>
+          <td class="px-4 py-2">
+            {{ doc.full_name if doc else '—' }}
+            {% if a.user_id == user.id %}
+            <span class="ml-1.5 text-xs bg-primary-100 text-primary-700 px-1.5 py-0.5 rounded">Ich</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not assignments %}
+        <tr>
+          <td colspan="3" class="px-4 py-10 text-center text-gray-400">Noch keine Dienste veröffentlicht.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% else %}
+<p class="text-gray-400 py-12 text-center">Noch kein Plan veröffentlicht.</p>
+{% endif %}
+{% endblock %}

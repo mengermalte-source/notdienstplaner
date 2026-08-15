@@ -10,7 +10,6 @@ from app.database import get_session
 from app.deps import require_admin
 from app.models.user import User, UserRole, DoctorProfile
 from app.models.schedule import PlanningPeriod, ShiftAssignment
-from app.models.special_day import SpecialDay, SpecialDayCategory
 from app.models.holiday_carryover import HolidayDutyCarryover
 from app.services.fairness import compute_fairness_score
 
@@ -35,13 +34,8 @@ async def stats_page(request: Request, period_id: Optional[int] = None,
             assignments = (await session.exec(
                 select(ShiftAssignment).where(
                     ShiftAssignment.planning_period_id == selected.id))).all()
-            sdays_raw = (await session.exec(
-                select(SpecialDay, SpecialDayCategory).join(
-                    SpecialDayCategory,
-                    SpecialDay.category_id == SpecialDayCategory.id)
-            )).all()
 
-            holiday_dates_stats = {sd.date for sd, cat in sdays_raw}
+            holiday_dates_stats = set()
             scores = compute_fairness_score(
                 [(a.user_id, a.date) for a in assignments], holiday_dates_stats)
             duty_counts = Counter(a.user_id for a in assignments)
@@ -56,7 +50,7 @@ async def stats_page(request: Request, period_id: Optional[int] = None,
     if carryovers:
         for doc in doctors:
             row = {"name": doc.full_name}
-            for key in ["weihnachten", "silvester", "ostern", "pfingsten"]:
+            for key in ["weihnachten", "silvester"]:
                 row[key] = any(
                     c.user_id == doc.id and c.holiday_key == key and c.worked
                     for c in carryovers

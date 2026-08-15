@@ -9,7 +9,6 @@ from app.database import get_session
 from app.deps import require_admin
 from app.models.user import User
 from app.models.special_day import SpecialDay, SpecialDayCategory
-from app.services.holidays import get_bavarian_holidays
 
 router = APIRouter(prefix="/admin/calendar", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates")
@@ -26,26 +25,6 @@ async def calendar_page(request: Request, year: int = 2027,
     return templates.TemplateResponse("admin/calendar.html",
         {"request": request, "user": admin, "categories": cats, "special_days": days, "year": year})
 
-
-@router.post("/import-holidays")
-async def import_holidays(year: int = Form(...), session: AsyncSession = Depends(get_session)):
-    result = await session.exec(select(SpecialDayCategory).where(
-        SpecialDayCategory.name == "Gesetzlicher Feiertag"))
-    cat = result.first()
-    if not cat:
-        cat = SpecialDayCategory(name="Gesetzlicher Feiertag", weight=2.5, color="#dc2626")
-        session.add(cat)
-        await session.commit()
-        await session.refresh(cat)
-
-    for d, name in get_bavarian_holidays(year):
-        existing = (await session.exec(
-            select(SpecialDay).where(SpecialDay.date == d))).first()
-        if not existing:
-            session.add(SpecialDay(date=d, category_id=cat.id,
-                                   label=name, is_auto_imported=True))
-    await session.commit()
-    return RedirectResponse(f"/admin/calendar?year={year}", status_code=302)
 
 
 @router.post("/days")

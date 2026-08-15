@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     await _ensure_admin()
     await _seed_test_doctors()
-    await _seed_holidays()
+    await _ensure_periods()
     yield
 
 
@@ -98,39 +98,36 @@ async def _seed_test_doctors():
         print(f"20 Test-Arztaccounts angelegt (Passwort: arzt123)")
 
 
-async def _seed_holidays():
+async def _ensure_periods():
     from datetime import date
     from app.database import AsyncSessionLocal
-    from app.models.special_day import SpecialDay, SpecialDayCategory
-    from app.services.holidays import get_bavarian_holidays
+    from app.models.schedule import PlanningPeriod
     from sqlalchemy import select as sa_select
 
-    current_year = date.today().year
-    years = [current_year, current_year + 1]
+    today = date.today()
+    to_ensure = []
+    for year in [today.year, today.year + 1]:
+        to_ensure.append(dict(
+            name=f"Notdienstplan Winter/Frühling {year}",
+            start_date=date(year, 1, 10),
+            end_date=date(year, 6, 30),
+            year=year,
+        ))
+        to_ensure.append(dict(
+            name=f"Notdienstplan Sommer/Herbst {year}/{year + 1}",
+            start_date=date(year, 7, 1),
+            end_date=date(year + 1, 1, 9),
+            year=year,
+        ))
 
     async with AsyncSessionLocal() as session:
-        result = await session.execute(sa_select(SpecialDayCategory).where(
-            SpecialDayCategory.name == "Gesetzlicher Feiertag"))
-        cat = result.scalars().first()
-        if not cat:
-            cat = SpecialDayCategory(name="Gesetzlicher Feiertag", weight=2.5, color="#dc2626")
-            session.add(cat)
-            await session.commit()
-            await session.refresh(cat)
-
-        imported = 0
-        for year in years:
-            for d, name in get_bavarian_holidays(year):
-                exists = (await session.execute(
-                    sa_select(SpecialDay).where(SpecialDay.date == d))).scalars().first()
-                if not exists:
-                    session.add(SpecialDay(
-                        date=d, category_id=cat.id,
-                        label=name, is_auto_imported=True))
-                    imported += 1
-        if imported:
-            await session.commit()
-            print(f"Bayerische Feiertage importiert: {imported} Tage ({', '.join(str(y) for y in years)})")
+        for p in to_ensure:
+            exists = (await session.execute(
+                sa_select(PlanningPeriod).where(PlanningPeriod.start_date == p["start_date"])
+            )).scalars().first()
+            if not exists:
+                session.add(PlanningPeriod(**p))
+        await session.commit()
 
 
 app = FastAPI(title="Notdienstplaner", lifespan=lifespan)
@@ -167,7 +164,6 @@ async def admin_dashboard(
 ):
     from datetime import date as date_type
     from app.models.schedule import PlanningPeriod, PlanStatus, ShiftAssignment
-    from app.models.special_day import SpecialDay, SpecialDayCategory
     from app.models.swap import SwapRequest, SwapStatus
     from app.models.user import UserRole, DoctorProfile
     from app.services.fairness import compute_fairness_score
@@ -202,12 +198,7 @@ async def admin_dashboard(
         assignments_count = len(assignments)
         acknowledged_count = sum(1 for a in assignments if a.acknowledged_at)
 
-        sdays_raw = (await session.exec(
-            select(SpecialDay, SpecialDayCategory).join(
-                SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id)
-        )).all()
-
-        holiday_dates_dash = {sd.date for sd, cat in sdays_raw}
+        holiday_dates_dash = set()
 
         scores = compute_fairness_score(
             [(a.user_id, a.date) for a in assignments],
@@ -233,10 +224,6 @@ async def admin_dashboard(
                 if a.date == next_shift and not a.is_substitute and a.user_id in users_map
             ]
 
-    # Pending swaps (accepted by target, waiting for admin)
-    pending_swaps = len((await session.exec(
-        select(SwapRequest).where(SwapRequest.status == SwapStatus.accepted)
-    )).all())
     open_requests = len((await session.exec(
         select(SwapRequest).where(SwapRequest.status == SwapStatus.pending)
     )).all())
@@ -248,7 +235,6 @@ async def admin_dashboard(
         "latest": latest,
         "assignments_count": assignments_count,
         "acknowledged_count": acknowledged_count,
-        "pending_swaps": pending_swaps,
         "open_requests": open_requests,
         "fairness_rows": fairness_rows,
         "next_shift": next_shift,

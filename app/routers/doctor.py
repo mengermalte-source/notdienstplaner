@@ -12,7 +12,6 @@ from app.models.user import User, DoctorProfile, UserRole, DayPreference
 from app.models.wish import WishEntry, WishType, WishPriority
 from app.models.vacation import VacationPeriod
 from app.models.schedule import ShiftAssignment, PlanningPeriod, PlanStatus
-from app.models.special_day import SpecialDay, SpecialDayCategory
 from app.services.auth import hash_password, verify_password
 from app.services.ical import build_ical
 from app.services.fairness import compute_fairness_score
@@ -167,6 +166,33 @@ async def my_schedule(request: Request, user: User = Depends(get_current_user),
     })
 
 
+@router.get("/plan", response_class=HTMLResponse)
+async def full_plan(request: Request, user: User = Depends(get_current_user),
+                    session: AsyncSession = Depends(get_session)):
+    # Neueste veröffentlichte Periode
+    periods = (await session.exec(
+        select(PlanningPeriod)
+        .where(PlanningPeriod.status == PlanStatus.published)
+        .order_by(PlanningPeriod.start_date.desc())
+    )).all()
+    period = periods[0] if periods else None
+    assignments = []
+    users_map = {}
+    if period:
+        assignments = (await session.exec(
+            select(ShiftAssignment)
+            .where(ShiftAssignment.planning_period_id == period.id,
+                   ShiftAssignment.is_substitute == False)
+            .order_by(ShiftAssignment.date)
+        )).all()
+        all_users = (await session.exec(select(User))).all()
+        users_map = {u.id: u for u in all_users}
+    return templates.TemplateResponse("doctor/plan.html", {
+        "request": request, "user": user,
+        "period": period, "assignments": assignments, "users_map": users_map,
+    })
+
+
 @router.post("/assignments/{assignment_id}/acknowledge")
 async def acknowledge_assignment(assignment_id: int,
                                   user: User = Depends(get_current_user),
@@ -210,11 +236,7 @@ async def my_stats(request: Request, user: User = Depends(get_current_user),
 
     periods_map = {p.id: p for p in (await session.exec(select(PlanningPeriod))).all()}
 
-    sdays_raw = (await session.exec(
-        select(SpecialDay, SpecialDayCategory).join(
-            SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id)
-    )).all()
-    holiday_dates_set = {sd.date for sd, cat in sdays_raw}
+    holiday_dates_set = set()
 
     # Per-period breakdown
     per_period = defaultdict(lambda: {"count": 0, "score": 0.0, "period": None})
@@ -228,10 +250,9 @@ async def my_stats(request: Request, user: User = Depends(get_current_user),
     all_docs = (await session.exec(
         select(User).where(User.role == UserRole.doctor, User.is_active == True)
     )).all()
-    holiday_dates_doc = {sd.date for sd, cat in sdays_raw}
     all_scores_map = compute_fairness_score(
         [(a.user_id, a.date) for a in (await session.exec(select(ShiftAssignment))).all()],
-        holiday_dates_doc,
+        set(),
     )
     all_score_values = sorted(all_scores_map.values())
     my_score = all_scores_map.get(user.id, 0.0)

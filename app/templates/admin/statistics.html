@@ -104,15 +104,13 @@
             <th class="px-4 py-3 text-left">Arzt</th>
             <th class="px-4 py-3 text-center">Weihnachten</th>
             <th class="px-4 py-3 text-center">Silvester/Neujahr</th>
-            <th class="px-4 py-3 text-center">Ostern</th>
-            <th class="px-4 py-3 text-center">Pfingsten</th>
           </tr>
         </thead>
         <tbody class="divide-y">
           {% for row in holiday_history %}
           <tr class="hover:bg-gray-50">
             <td class="px-4 py-3 font-medium">{{ row.name }}</td>
-            {% for key in ["weihnachten","silvester","ostern","pfingsten"] %}
+            {% for key in ["weihnachten","silvester"] %}
             <td class="px-4 py-3 text-center">
               {% if row[key] %}<span class="text-red-600 font-semibold">✓</span>{% else %}<span class="text-gray-300">–</span>{% endif %}
             </td>

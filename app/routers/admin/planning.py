@@ -17,7 +17,6 @@ from app.database import get_session
 from app.deps import require_admin
 from app.models.schedule import PlanStatus, PlanningPeriod, ShiftAssignment
 from app.models.holiday_carryover import HolidayDutyCarryover
-from app.models.special_day import SpecialDay, SpecialDayCategory
 from app.models.user import DoctorProfile, User, UserRole
 from app.models.wish import WishEntry, WishPriority, WishType
 from types import SimpleNamespace
@@ -32,53 +31,10 @@ templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "tem
 
 
 def _get_key_holiday_dates(year: int) -> dict[str, set[date_type]]:
-    """Gibt die Datumsets für Weihnachten, Silvester/Neujahr, Ostern, Pfingsten zurück."""
-    from datetime import timedelta
-    import holidays as hol
-    bavarian = hol.Germany(state="BY", years=year)
-
-    # Ostermontag und Pfingstmontag sind gesetzliche Feiertage; Sonntag = Montag - 1 Tag
-    easter_monday = next(
-        (d for d, name in bavarian.items()
-         if "Ostermontag" in name or "Easter Monday" in name),
-        None,
-    )
-    pentecost_monday = next(
-        (d for d, name in bavarian.items()
-         if "Pfingstmontag" in name or "Whit Monday" in name),
-        None,
-    )
-    # Fallback: library could list Ostersonntag / Pfingstsonntag directly
-    easter_sunday = next(
-        (d for d, name in bavarian.items()
-         if "Ostersonntag" in name or "Easter Sunday" in name),
-        easter_monday - timedelta(days=1) if easter_monday else None,
-    )
-    pentecost_sunday = next(
-        (d for d, name in bavarian.items()
-         if "Pfingstsonntag" in name or "Whit Sunday" in name),
-        pentecost_monday - timedelta(days=1) if pentecost_monday else None,
-    )
-
-    result: dict[str, set] = {
+    return {
         "weihnachten": {date_type(year, 12, 24), date_type(year, 12, 25), date_type(year, 12, 26)},
         "silvester": {date_type(year, 12, 31), date_type(year + 1, 1, 1)},
-        "ostern": set(),
-        "pfingsten": set(),
     }
-    if easter_sunday:
-        result["ostern"] = {
-            easter_sunday - timedelta(days=1),
-            easter_sunday,
-            easter_sunday + timedelta(days=1),
-        }
-    if pentecost_sunday:
-        result["pfingsten"] = {
-            pentecost_sunday - timedelta(days=1),
-            pentecost_sunday,
-            pentecost_sunday + timedelta(days=1),
-        }
-    return result
 
 _MONTH_NAMES = [
     "Januar", "Februar", "März", "April", "Mai", "Juni",
@@ -128,29 +84,22 @@ def _build_months(start: date_type, end: date_type) -> list:
 @router.get("", response_class=HTMLResponse)
 async def planning_page(request: Request, session: AsyncSession = Depends(get_session),
                         admin: User = Depends(require_admin)):
+    from datetime import date as today_date
+    today = today_date.today()
     periods = (await session.exec(
-        select(PlanningPeriod).order_by(PlanningPeriod.year.desc())
+        select(PlanningPeriod).order_by(PlanningPeriod.start_date.desc())
     )).all()
+    # Find current period (contains today)
+    current = next(
+        (p for p in periods if p.start_date <= today <= p.end_date),
+        periods[0] if periods else None
+    )
+    if current:
+        return RedirectResponse(f"/admin/planning/{current.id}", status_code=302)
     return templates.TemplateResponse("admin/planning.html", {
         "request": request, "user": admin,
         "periods": periods, "period": None, "assignments": [],
     })
-
-
-@router.post("/create")
-async def create_period(
-    name: str = Form(...), year: int = Form(...),
-    start_date: str = Form(...), end_date: str = Form(...),
-    session: AsyncSession = Depends(get_session),
-):
-    period = PlanningPeriod(
-        name=name, year=year,
-        start_date=date_type.fromisoformat(start_date),
-        end_date=date_type.fromisoformat(end_date),
-    )
-    session.add(period)
-    await session.commit()
-    return RedirectResponse("/admin/planning", status_code=302)
 
 
 # ---------------------------------------------------------------------------
@@ -213,16 +162,7 @@ async def run_algorithm(
 
     doctor_objs = [DoctorWithFactor(u, profiles.get(u.id)) for u in doctors]
 
-    sdays_raw = (await session.exec(
-        select(SpecialDay, SpecialDayCategory).join(
-            SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id
-        ).where(
-            SpecialDay.date >= period.start_date,
-            SpecialDay.date <= period.end_date,
-        )
-    )).all()
-
-    holiday_dates = {sd.date for sd, _ in sdays_raw}
+    holiday_dates = set()
 
     # Urlaubszeiträume laden
     vacation_periods = (await session.exec(
@@ -233,14 +173,14 @@ async def run_algorithm(
         )
     )).all()
 
-    # Tagesauswahl: Mi, Fr, Sa, So + Feiertage
+    # Tagesauswahl: Mi, Fr, Sa, So
     all_days = [
         period.start_date + timedelta(days=i)
         for i in range((period.end_date - period.start_date).days + 1)
     ]
     days = [
         d for d in all_days
-        if d.weekday() in (2, 4, 5, 6) or d in holiday_dates
+        if d.weekday() in (2, 4, 5, 6)
     ]
 
     if not days:
@@ -341,15 +281,7 @@ async def run_substitute_algorithm(
     )).all()
     profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
 
-    sdays_raw = (await session.exec(
-        select(SpecialDay, SpecialDayCategory).join(
-            SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id
-        ).where(
-            SpecialDay.date >= period.start_date,
-            SpecialDay.date <= period.end_date,
-        )
-    )).all()
-    holiday_dates = {sd.date for sd, _ in sdays_raw}
+    holiday_dates = set()
 
     all_days = [
         period.start_date + timedelta(days=i)
@@ -358,8 +290,7 @@ async def run_substitute_algorithm(
     # Nur Dez–Apr, gleiche Tagestypen wie Primärplan
     sub_days = [
         d for d in all_days
-        if d.month in (12, 1, 2, 3, 4)
-        and (d.weekday() in (2, 4, 5, 6) or d in holiday_dates)
+        if d.month in (12, 1, 2, 3, 4) and d.weekday() in (2, 4, 5, 6)
     ]
 
     if not sub_days:
@@ -448,15 +379,7 @@ async def period_detail(
     doctors = [u for u in users.values()
                if u.role == UserRole.doctor and u.is_active]
     doctors.sort(key=lambda u: u.full_name)
-    sdays_raw = (await session.exec(
-        select(SpecialDay, SpecialDayCategory).join(
-            SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id
-        ).where(
-            SpecialDay.date >= period.start_date,
-            SpecialDay.date <= period.end_date,
-        )
-    )).all()
-    holiday_dates = {sd.date for sd, _ in sdays_raw}
+    holiday_dates = set()
     scores = compute_fairness_score([(a.user_id, a.date) for a in assignments], holiday_dates)
     return templates.TemplateResponse("admin/planning.html", {
         "request": request, "user": admin,
@@ -618,14 +541,9 @@ async def find_substitute(
         all_period_assignments = (await session.exec(
             select(ShiftAssignment).where(ShiftAssignment.planning_period_id == period_id)
         )).all()
-        sdays_raw = (await session.exec(
-            select(SpecialDay, SpecialDayCategory).join(
-                SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id)
-        )).all()
-        weight_by_date = {sd.date: cat.weight for sd, cat in sdays_raw}
         actual_scores: dict = defaultdict(float)
         for a in all_period_assignments:
-            actual_scores[a.user_id] += weight_by_date.get(a.date, 1.0)
+            actual_scores[a.user_id] += a.weighted_score
 
         for doc in all_doctors:
             if doc.id in already_assigned:
@@ -698,16 +616,10 @@ async def override_assignment(
     a = await session.get(ShiftAssignment, assignment_id)
     if not a or a.planning_period_id != period_id:
         return RedirectResponse(f"/admin/planning/{period_id}", status_code=302)
-    sdays_raw = (await session.exec(
-        select(SpecialDay, SpecialDayCategory).join(
-            SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id
-        ).where(SpecialDay.date == a.date)
-    )).all()
-    holiday_dates = {sd.date for sd, _ in sdays_raw}
     a.user_id = new_user_id
     a.is_manual_override = True
     a.acknowledged_at = None
-    a.weighted_score = get_day_weight(a.date, holiday_dates)
+    a.weighted_score = get_day_weight(a.date, set())
     session.add(a)
     await session.commit()
     return RedirectResponse(f"/admin/planning/{period_id}", status_code=302)
@@ -734,11 +646,7 @@ async def publish_period(period_id: int, session: AsyncSession = Depends(get_ses
     sub_assignments = [a for a in all_assignments if a.is_substitute]
 
     if all_assignments:
-        sdays_raw = (await session.exec(
-            select(SpecialDay, SpecialDayCategory).join(
-                SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id)
-        )).all()
-        holiday_dates_all = {sd.date for sd, _ in sdays_raw}
+        holiday_dates_all = set()
 
         doctors_raw = (await session.exec(
             select(User).where(User.role == UserRole.doctor, User.is_active == True)
