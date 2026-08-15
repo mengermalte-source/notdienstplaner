@@ -11,6 +11,7 @@ from app.deps import require_admin
 from app.models.user import User, UserRole, DoctorProfile
 from app.models.schedule import PlanningPeriod, ShiftAssignment
 from app.models.special_day import SpecialDay, SpecialDayCategory
+from app.models.holiday_carryover import HolidayDutyCarryover
 from app.services.fairness import compute_fairness_score
 
 router = APIRouter(prefix="/admin/statistics", dependencies=[Depends(require_admin)])
@@ -49,8 +50,21 @@ async def stats_page(request: Request, period_id: Optional[int] = None,
         select(User).where(User.role == UserRole.doctor, User.is_active == True))).all()
     profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
 
+    # Feiertagshistorie über alle Perioden
+    carryovers = (await session.exec(select(HolidayDutyCarryover))).all()
+    holiday_history = []
+    if carryovers:
+        for doc in doctors:
+            row = {"name": doc.full_name}
+            for key in ["weihnachten", "silvester", "ostern", "pfingsten"]:
+                row[key] = any(
+                    c.user_id == doc.id and c.holiday_key == key and c.worked
+                    for c in carryovers
+                )
+            holiday_history.append(row)
+
     return templates.TemplateResponse("admin/statistics.html", {
         "request": request, "user": user, "periods": periods, "selected": selected,
         "doctors": doctors, "scores": scores, "duty_counts": duty_counts,
-        "profiles": profiles,
+        "profiles": profiles, "holiday_history": holiday_history,
     })

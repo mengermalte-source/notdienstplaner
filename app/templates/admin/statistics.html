@@ -60,4 +60,33 @@
 {% elif not periods %}
 <p class="text-center text-gray-400 py-12">Noch keine Planungsperioden vorhanden.</p>
 {% endif %}
+
+{% if holiday_history %}
+<section class="mt-8">
+  <h2 class="text-lg font-semibold text-gray-800 mb-4">Feiertagsdienste (Verlauf)</h2>
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-3 py-2 text-left">Arzt</th>
+        <th class="px-3 py-2">Weihnachten</th>
+        <th class="px-3 py-2">Silvester/Neujahr</th>
+        <th class="px-3 py-2">Ostern</th>
+        <th class="px-3 py-2">Pfingsten</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in holiday_history %}
+      <tr class="border-t border-gray-100">
+        <td class="px-3 py-2 font-medium">{{ row.name }}</td>
+        {% for key in ["weihnachten","silvester","ostern","pfingsten"] %}
+        <td class="px-3 py-2 text-center">
+          {% if row[key] %}<span class="text-red-600 font-semibold">✓</span>{% else %}<span class="text-gray-300">–</span>{% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
 {% endblock %}
