@@ -13,29 +13,36 @@
       <div>
         <p class="font-semibold mb-1">Harte Regeln (werden immer eingehalten):</p>
         <ul class="space-y-1 text-primary-800">
-          <li>• <strong>Mi/Fr Nachmittag:</strong> je 1 Arzt &nbsp;|&nbsp; <strong>Sa/So/Feiertag:</strong> je 2 Ärzte</li>
-          <li>• Eingetragene <strong>Urlaubszeiträume</strong> sperren alle betroffenen Tage automatisch</li>
+          <li>• <strong>Mi/Fr Nachmittag:</strong> je 1 Arzt &nbsp;|&nbsp; <strong>Sa/So/Feiertag:</strong> je 2 Ärzte (anpassbar über Sondertage)</li>
+          <li>• <strong>Urlaubszeiträume</strong> und <strong>„Kann nicht"</strong>-Wünsche sperren betroffene Tage vollständig</li>
+          <li>• <strong>Jährliche Sperrtage</strong> (z.&nbsp;B. Geburtstage) gelten periodenübergreifend automatisch</li>
           <li>• Ärzte mit <strong>Tagespräferenz</strong> (nur Mi oder nur Fr) erhalten ausschließlich diese Tage</li>
           <li>• Kein Arzt übernimmt mehr als <strong>115 % + 2</strong> seiner fairen Sollzahl</li>
           <li>• Jeder Arzt mit Sollzahl ≥ 1 übernimmt mindestens <strong>70 %</strong> seiner fairen Dienste</li>
         </ul>
         <p class="font-semibold mt-3 mb-1">Fallback-Modus (bei unlösbaren Constraints):</p>
         <ul class="space-y-1 text-primary-800">
-          <li>• Ist kein gültiger Plan unter obigen Regeln möglich, startet der Algorithmus einen zweiten Versuch</li>
-          <li>• <strong>„Kann nicht"</strong>-Wünsche werden dann als starke Präferenz behandelt — die Abdeckung hat Vorrang</li>
+          <li>• Ist kein gültiger Plan möglich, startet der Algorithmus einen zweiten Versuch</li>
+          <li>• <strong>„Kann nicht"</strong>-Einzelwünsche werden dann als starke Präferenz behandelt (Gewicht 500) — Abdeckung hat Vorrang</li>
           <li>• Die 70 %-Untergrenze entfällt, damit auch bei engen Urlaubslagen ein Plan entsteht</li>
-          <li>• Urlaubssperren bleiben in jedem Fall hart</li>
+          <li>• Urlaubssperren und jährliche Sperrtage bleiben in jedem Fall hart</li>
+        </ul>
+        <p class="font-semibold mt-3 mb-1">Bereitschaftsdienst (Dez–Apr):</p>
+        <ul class="space-y-1 text-primary-800">
+          <li>• Zusätzlich zum Primärarzt wird je 1 <strong>Bereitschaftsarzt</strong> pro Tag eingeplant</li>
+          <li>• Bereitschaft und Primärdienst am selben Tag schließen sich aus</li>
+          <li>• Fairness des Bereitschaftsdienstes wird separat mit eigenem Übertrag berechnet</li>
         </ul>
       </div>
       <div>
         <p class="font-semibold mb-1">Optimierungsziele (bestmöglich):</p>
         <ul class="space-y-1 text-primary-800">
           <li>• <strong>Fairness:</strong> Verteilung proportional zum <strong>Anrechnungsfaktor</strong>; Freitag zählt halb so viel wie Mi/Sa/So/FT</li>
-          <li>• Ärzte mit <strong>Wunschanzahl</strong> erhalten diese zuerst; der Rest wird proportional verteilt</li>
-          <li>• <strong>„Lieber nicht"</strong>-Wünsche werden möglichst vermieden</li>
+          <li>• Ärzte mit <strong>Wunschanzahl</strong> erhalten diese zuerst; verbleibende Slots werden proportional verteilt</li>
+          <li>• <strong>„Lieber nicht"</strong>-Wünsche werden möglichst vermieden (Gewicht 10)</li>
           <li>• <strong>„Möchte gerne"</strong>-Wünsche werden bevorzugt berücksichtigt</li>
-          <li>• <strong>Übertrag:</strong> Mehr-/Minderdienste aus der Vorperiode fließen in die nächste Planung ein</li>
-          <li>• <strong>Feiertagsgerechtigkeit:</strong> Wer zuletzt an Weihnachten, Silvester, Ostern oder Pfingsten Dienst hatte, wird in der nächsten Periode möglichst geschont</li>
+          <li>• <strong>Übertrag:</strong> Mehr-/Minderdienste (gewichtet) aus der Vorperiode fließen in die Zielberechnung der nächsten Periode ein</li>
+          <li>• <strong>Feiertagsgerechtigkeit:</strong> Wer zuletzt an <strong>Weihnachten (24.–26. Dez)</strong> oder <strong>Silvester/Neujahr (31. Dez / 1. Jan)</strong> Dienst hatte, wird in der Folgeperiode bei diesen Tagen möglichst geschont</li>
         </ul>
       </div>
     </div>
