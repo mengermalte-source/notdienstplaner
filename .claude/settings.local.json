@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(git checkout *)",
+      "Bash(git merge feature/notdienstplaner-mvp --no-ff -m 'feat: merge notdienstplaner-mvp — Scheduler V2 complete *)"
     ]
   }
 }

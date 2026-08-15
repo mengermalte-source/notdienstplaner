@@ -84,21 +84,13 @@ def _build_months(start: date_type, end: date_type) -> list:
 @router.get("", response_class=HTMLResponse)
 async def planning_page(request: Request, session: AsyncSession = Depends(get_session),
                         admin: User = Depends(require_admin)):
-    from datetime import date as today_date
-    today = today_date.today()
+    today = date_type.today()
     periods = (await session.exec(
         select(PlanningPeriod).order_by(PlanningPeriod.start_date.desc())
     )).all()
-    # Find current period (contains today)
-    current = next(
-        (p for p in periods if p.start_date <= today <= p.end_date),
-        periods[0] if periods else None
-    )
-    if current:
-        return RedirectResponse(f"/admin/planning/{current.id}", status_code=302)
     return templates.TemplateResponse("admin/planning.html", {
         "request": request, "user": admin,
-        "periods": periods, "period": None, "assignments": [],
+        "periods": periods, "period": None, "assignments": [], "today": today,
     })
 
 

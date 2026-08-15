@@ -47,21 +47,33 @@
 {% endif %}
 
 {% if not period %}
-<div class="space-y-3">
-  {% for p in periods %}
-  <div class="bg-white border rounded-lg p-4 flex justify-between items-center gap-3">
+<div class="space-y-2">
+  {% for p in periods | sort(attribute='start_date', reverse=true) %}
+  {% set is_current = p.start_date <= today <= p.end_date %}
+  {% set is_future = p.start_date > today %}
+  <div class="bg-white border rounded-lg p-4 flex justify-between items-center gap-3
+    {% if is_current %}border-primary-400 ring-1 ring-primary-300{% endif %}">
     <div class="min-w-0">
-      <span class="font-semibold">{{ p.name }}</span>
-      <span class="ml-2 text-sm text-gray-500 hidden sm:inline">{{ p.start_date.strftime('%d.%m.%Y') }} – {{ p.end_date.strftime('%d.%m.%Y') }}</span>
-      <span class="ml-2 text-xs px-2 py-0.5 rounded
-        {% if p.status == 'published' %}bg-green-100 text-green-700
-        {% elif p.status == 'draft' %}bg-yellow-100 text-yellow-700
-        {% else %}bg-gray-100 text-gray-500{% endif %}">
-        {% if p.status == 'published' %}Veröffentlicht{% elif p.status == 'draft' %}Entwurf{% else %}{{ p.status }}{% endif %}
-      </span>
-      <p class="text-sm text-gray-500 sm:hidden mt-0.5">{{ p.start_date.strftime('%d.%m.%Y') }} – {{ p.end_date.strftime('%d.%m.%Y') }}</p>
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="font-semibold">{{ p.name }}</span>
+        {% if is_current %}
+        <span class="text-xs px-2 py-0.5 rounded-full bg-primary-100 text-primary-700 font-medium">Aktuell</span>
+        {% elif is_future %}
+        <span class="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">Nächste</span>
+        {% endif %}
+        <span class="text-xs px-2 py-0.5 rounded
+          {% if p.status == 'published' %}bg-green-100 text-green-700
+          {% elif p.status == 'draft' %}bg-yellow-100 text-yellow-700
+          {% else %}bg-gray-100 text-gray-500{% endif %}">
+          {% if p.status == 'published' %}Veröffentlicht{% elif p.status == 'draft' %}Entwurf{% else %}{{ p.status }}{% endif %}
+        </span>
+      </div>
+      <p class="text-sm text-gray-500 mt-0.5">{{ p.start_date.strftime('%d.%m.%Y') }} – {{ p.end_date.strftime('%d.%m.%Y') }}</p>
     </div>
-    <a href="/admin/planning/{{ p.id }}" class="bg-accent-500 hover:bg-accent-700 text-white text-sm px-3 py-1 rounded flex-shrink-0">Öffnen</a>
+    <a href="/admin/planning/{{ p.id }}"
+       class="{% if is_current %}bg-primary-600 hover:bg-primary-700{% else %}bg-accent-500 hover:bg-accent-700{% endif %} text-white text-sm px-3 py-1.5 rounded flex-shrink-0">
+      Öffnen
+    </a>
   </div>
   {% endfor %}
 </div>
