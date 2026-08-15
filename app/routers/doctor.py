@@ -249,18 +249,6 @@ async def full_plan(request: Request, user: User = Depends(get_current_user),
     })
 
 
-@router.post("/assignments/{assignment_id}/acknowledge")
-async def acknowledge_assignment(assignment_id: int,
-                                  user: User = Depends(get_current_user),
-                                  session: AsyncSession = Depends(get_session)):
-    a = await session.get(ShiftAssignment, assignment_id)
-    if not a or a.user_id != user.id:
-        raise HTTPException(status_code=403)
-    a.acknowledged_at = datetime.utcnow()
-    session.add(a)
-    await session.commit()
-    return RedirectResponse("/me/schedule", status_code=302)
-
 
 @router.get("/schedule.ics")
 async def export_ical(user: User = Depends(get_current_user),

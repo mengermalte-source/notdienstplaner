@@ -999,7 +999,7 @@ async def export_csv(
 
     output = io.StringIO()
     writer = csv.writer(output, delimiter=";")
-    writer.writerow(["Datum", "Wochentag", "Arzt", "E-Mail", "Teilzeit", "Gewicht", "Bestätigt"])
+    writer.writerow(["Datum", "Wochentag", "Arzt", "E-Mail", "Teilzeit", "Gewicht"])
 
     for a in assignments:
         u = users.get(a.user_id)
@@ -1007,7 +1007,6 @@ async def export_csv(
             continue
         profile = profiles.get(a.user_id)
         factor = f"{int((profile.part_time_factor if profile else 1.0) * 100)}%"
-        confirmed = a.acknowledged_at.strftime("%d.%m.%Y") if a.acknowledged_at else "Nein"
         writer.writerow([
             a.date.strftime("%d.%m.%Y"),
             _WEEKDAY_NAMES[a.date.weekday()],
@@ -1015,7 +1014,6 @@ async def export_csv(
             u.email,
             factor,
             f"{a.weighted_score:.1f}".replace(".", ","),
-            confirmed,
         ])
 
     output.seek(0)
@@ -1046,7 +1044,6 @@ async def override_assignment(
     a_date = a.date
     a.user_id = new_user_id
     a.is_manual_override = True
-    a.acknowledged_at = None
     a.weighted_score = get_day_weight(a_date, set())
     session.add(a)
     await session.commit()

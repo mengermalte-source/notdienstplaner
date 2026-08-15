@@ -221,17 +221,21 @@ async def admin_dashboard(
         )
 
     assignments_count = 0
-    acknowledged_count = 0
     fairness_rows: list[dict] = []
     next_shift = None
     next_shift_doctors: list[str] = []
+    today_duties: list[str] = []
+
+    coverage_issues: list[str] = []
+    wish_violations = 0
+    fairness_span = 0.0
+    validation_status = "ok"
 
     if latest:
         assignments = (await session.exec(
             select(ShiftAssignment).where(ShiftAssignment.planning_period_id == latest.id)
         )).all()
         assignments_count = len(assignments)
-        acknowledged_count = sum(1 for a in assignments if a.acknowledged_at)
 
         scores = compute_fairness_score(
             [(a.user_id, a.date) for a in assignments],
@@ -244,10 +248,10 @@ async def admin_dashboard(
             })
         fairness_rows.sort(key=lambda r: r["score"])
 
+        users_map = {d.id: d for d in doctors}
         future = [a.date for a in assignments if a.date >= today and not a.is_substitute]
         next_shift = min(future) if future else None
 
-        users_map = {d.id: d for d in doctors}
         if next_shift:
             next_shift_doctors = [
                 users_map[a.user_id].full_name
@@ -255,9 +259,74 @@ async def admin_dashboard(
                 if a.date == next_shift and not a.is_substitute and a.user_id in users_map
             ]
 
+        today_duties = [
+            users_map[a.user_id].full_name
+            for a in assignments
+            if a.date == today and not a.is_substitute and a.user_id in users_map
+        ]
+
+        # --- Plan validation ---
+        from datetime import timedelta
+        from app.services.algorithm import get_day_coverage
+        from app.models.wish import WishEntry, WishType, WishPriority
+
+        # Holiday dates for coverage check
+        holiday_dates_val: set = set()
+        try:
+            import holidays as hol_lib
+            years_val = set(range(latest.start_date.year, latest.end_date.year + 1))
+            bavarian_val = hol_lib.Germany(state="BY", years=years_val)
+            holiday_dates_val = {d for d in bavarian_val.keys() if latest.start_date <= d <= latest.end_date}
+        except Exception:
+            pass
+
+        # Coverage: count primary assignments per day vs. required
+        from collections import Counter
+        primary_count = Counter(a.date for a in assignments if not a.is_substitute)
+        n_period_days = (latest.end_date - latest.start_date).days + 1
+        all_duty_days = [
+            latest.start_date + timedelta(days=i)
+            for i in range(n_period_days)
+            if (latest.start_date + timedelta(days=i)).weekday() in (2, 4, 5, 6)
+            or (latest.start_date + timedelta(days=i)) in holiday_dates_val
+        ]
+        for d in all_duty_days:
+            required = get_day_coverage(d, holiday_dates_val)
+            actual = primary_count.get(d, 0)
+            if actual != required:
+                day_name = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"][d.weekday()]
+                coverage_issues.append(
+                    f"{d.strftime('%d.%m.')} ({day_name}): {actual}/{required} Ärzte"
+                )
+
+        # Wish violations: hard negatives that got assigned anyway
+        hard_wishes = (await session.exec(
+            select(WishEntry).where(
+                WishEntry.date >= latest.start_date,
+                WishEntry.date <= latest.end_date,
+                WishEntry.wish_type == WishType.negative,
+                WishEntry.priority == WishPriority.hard,
+            )
+        )).all()
+        assigned_set = {(a.user_id, a.date) for a in assignments if not a.is_substitute}
+        wish_violations = sum(1 for w in hard_wishes if (w.user_id, w.date) in assigned_set)
+
+        # Fairness span
+        if len(fairness_rows) >= 2:
+            fairness_span = round(fairness_rows[-1]["score"] - fairness_rows[0]["score"], 1)
+
+        if coverage_issues or wish_violations > 0:
+            validation_status = "error"
+        elif fairness_span > 4.0:
+            validation_status = "warning"
+
     open_requests = len((await session.exec(
         select(SwapRequest).where(SwapRequest.status == SwapStatus.pending)
     )).all())
+
+    next_period = next(
+        (p for p in reversed(all_periods) if p.start_date > today), None
+    )
 
     return _templates.TemplateResponse("admin/dashboard.html", {
         "request": request, "user": admin,
@@ -265,12 +334,17 @@ async def admin_dashboard(
         "config_issues": config_issues,
         "latest": latest,
         "assignments_count": assignments_count,
-        "acknowledged_count": acknowledged_count,
         "open_requests": open_requests,
         "fairness_rows": fairness_rows,
         "next_shift": next_shift,
         "next_shift_doctors": next_shift_doctors,
+        "today_duties": today_duties,
+        "next_period": next_period,
         "today": today,
+        "coverage_issues": coverage_issues,
+        "wish_violations": wish_violations,
+        "fairness_span": fairness_span,
+        "validation_status": validation_status,
     })
 
 
