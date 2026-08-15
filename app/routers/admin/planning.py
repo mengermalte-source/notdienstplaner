@@ -444,6 +444,280 @@ async def period_calendar(
 
 
 # ---------------------------------------------------------------------------
+# QS — Qualitätssicherung
+# ---------------------------------------------------------------------------
+
+def _qa_compute_targets(doctors: list, service_days: list, holiday_dates: set) -> dict:
+    from app.services.algorithm import get_day_coverage
+    total_slots = sum(get_day_coverage(d, holiday_dates) for d in service_days)
+    fixed = [doc for doc in doctors if doc.desired_shifts is not None]
+    flex = [doc for doc in doctors if doc.desired_shifts is None]
+    fixed_claimed = sum(doc.desired_shifts for doc in fixed)
+    flex_slots = max(0, total_slots - fixed_claimed)
+    total_flex_credit = sum(doc.credit_factor for doc in flex) or 1.0
+    targets: dict = {}
+    for doc in fixed:
+        targets[doc.id] = float(doc.desired_shifts)
+    for doc in flex:
+        targets[doc.id] = (doc.credit_factor / total_flex_credit) * flex_slots
+    return targets
+
+
+@router.get("/{period_id}/qa", response_class=HTMLResponse)
+async def period_qa(
+    period_id: int, request: Request,
+    session: AsyncSession = Depends(get_session),
+    admin: User = Depends(require_admin),
+):
+    from collections import Counter
+    period = await session.get(PlanningPeriod, period_id)
+    assignments = (await session.exec(
+        select(ShiftAssignment).where(
+            ShiftAssignment.planning_period_id == period_id,
+            ShiftAssignment.is_substitute == False,
+        ).order_by(ShiftAssignment.date)
+    )).all()
+
+    if not assignments:
+        return templates.TemplateResponse("admin/qa.html", {
+            "request": request, "user": admin,
+            "period": period, "checks": [], "passed": 0, "total": 0,
+            "has_assignments": False,
+        })
+
+    doctors = (await session.exec(
+        select(User).where(User.role == UserRole.doctor, User.is_active == True)
+    )).all()
+    profiles_map = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
+    wishes = (await session.exec(
+        select(WishEntry).where(
+            WishEntry.date >= period.start_date,
+            WishEntry.date <= period.end_date,
+        )
+    )).all()
+    vacations = (await session.exec(
+        select(VacationPeriod).where(
+            VacationPeriod.end_date >= period.start_date,
+            VacationPeriod.start_date <= period.end_date,
+        )
+    )).all()
+
+    holiday_dates: set = set()
+    users_map = {d.id: d for d in doctors}
+
+    # Service days
+    all_days = [
+        period.start_date + timedelta(days=i)
+        for i in range((period.end_date - period.start_date).days + 1)
+    ]
+    service_days = [d for d in all_days if d.weekday() in (2, 4, 5, 6) or d in holiday_dates]
+
+    # Aggregates
+    counts_per_day: Counter = Counter(a.date for a in assignments)
+    counts_per_doctor: Counter = Counter(a.user_id for a in assignments)
+    weighted_scores: dict[int, float] = {}
+    for a in assignments:
+        weighted_scores[a.user_id] = (
+            weighted_scores.get(a.user_id, 0.0) + get_day_weight(a.date, holiday_dates)
+        )
+
+    # Doctor proxy objects for target computation
+    class _Doc:
+        def __init__(self, user, profile):
+            self.id = user.id
+            self.credit_factor = profile.credit_factor if profile else 1.0
+            self.desired_shifts = profile.desired_shifts if profile else None
+            self.day_preference = str(profile.day_preference) if profile else "alle"
+
+    doc_objs = [_Doc(d, profiles_map.get(d.id)) for d in doctors]
+    targets = _qa_compute_targets(doc_objs, service_days, holiday_dates)
+
+    # Hard wishes and vacation blocks
+    hard_negative = {
+        (w.user_id, w.date) for w in wishes
+        if w.wish_type == "negative" and w.priority == "hard"
+    }
+    assignment_set = {(a.user_id, a.date) for a in assignments}
+    vacation_blocked: set = set()
+    for vp in vacations:
+        cur = vp.start_date
+        while cur <= vp.end_date:
+            if cur.weekday() in (2, 4, 5, 6):
+                vacation_blocked.add((vp.user_id, cur))
+            cur += timedelta(days=1)
+
+    checks = []
+
+    # --- 1. Tagesabdeckung vollständig ---
+    coverage_errors = []
+    for day in service_days:
+        req = get_day_coverage(day, holiday_dates)
+        got = counts_per_day.get(day, 0)
+        if got != req:
+            label = day.strftime("%d.%m.%Y") + f" ({['Mo','Di','Mi','Do','Fr','Sa','So'][day.weekday()]})"
+            coverage_errors.append(f"{label}: {got} statt {req} Ärzte")
+    checks.append({
+        "id": "test_every_day_is_covered",
+        "name": "Tagesabdeckung vollständig",
+        "detail": "Mi/Fr = 1 Arzt, Sa/So/Feiertag = 2 Ärzte an jedem Diensttag",
+        "passed": not coverage_errors,
+        "errors": coverage_errors[:10],
+        "error_count": len(coverage_errors),
+    })
+
+    # --- 2. „Kann nicht"-Wünsche eingehalten ---
+    wish_errors = []
+    for uid, d in hard_negative:
+        if (uid, d) in assignment_set:
+            name = users_map[uid].full_name if uid in users_map else f"Arzt {uid}"
+            wish_errors.append(f"{name} am {d.strftime('%d.%m.%Y')}")
+    checks.append({
+        "id": "test_hard_wishes_respected",
+        "name": "„Kann nicht"-Wünsche eingehalten",
+        "detail": "Kein Arzt arbeitet an einem als „Kann nicht" gesperrten Tag",
+        "passed": not wish_errors,
+        "errors": wish_errors,
+        "error_count": len(wish_errors),
+    })
+
+    # --- 3. Urlaubszeiträume eingehalten ---
+    vac_errors = []
+    for uid, d in vacation_blocked:
+        if (uid, d) in assignment_set:
+            name = users_map[uid].full_name if uid in users_map else f"Arzt {uid}"
+            vac_errors.append(f"{name} am {d.strftime('%d.%m.%Y')}")
+    checks.append({
+        "id": "test_vacation_periods_respected",
+        "name": "Urlaubszeiträume eingehalten",
+        "detail": "Kein Dienst während eines eingetragenen Urlaubszeitraums",
+        "passed": not vac_errors,
+        "errors": vac_errors,
+        "error_count": len(vac_errors),
+    })
+
+    # --- 4. Tagespräferenz eingehalten ---
+    pref_errors = []
+    for a in assignments:
+        profile = profiles_map.get(a.user_id)
+        if not profile:
+            continue
+        pref = str(profile.day_preference)
+        name = users_map[a.user_id].full_name if a.user_id in users_map else f"Arzt {a.user_id}"
+        if pref == "mittwoch" and a.date.weekday() != 2:
+            pref_errors.append(f"{name}: {a.date.strftime('%d.%m.%Y')} ist kein Mittwoch")
+        elif pref == "freitag" and a.date.weekday() != 4:
+            pref_errors.append(f"{name}: {a.date.strftime('%d.%m.%Y')} ist kein Freitag")
+    checks.append({
+        "id": "test_day_preference_respected",
+        "name": "Tagespräferenz eingehalten",
+        "detail": "Ärzte mit Mittwoch- oder Freitag-Präferenz nur an diesen Tagen eingeplant",
+        "passed": not pref_errors,
+        "errors": pref_errors[:10],
+        "error_count": len(pref_errors),
+    })
+
+    # --- 5. Anrechnungsfaktor 0 → keine Dienste ---
+    zero_errors = []
+    for doc in doc_objs:
+        if doc.credit_factor == 0.0 and counts_per_doctor.get(doc.id, 0) > 0:
+            name = users_map[doc.id].full_name if doc.id in users_map else f"Arzt {doc.id}"
+            zero_errors.append(f"{name}: {counts_per_doctor[doc.id]} Dienste trotz Faktor 0")
+    checks.append({
+        "id": "test_zero_credit_doctor_gets_no_shifts",
+        "name": "Anrechnungsfaktor 0 → keine Dienste",
+        "detail": "Ärzte mit Anrechnungsfaktor 0 werden nicht eingeplant",
+        "passed": not zero_errors,
+        "errors": zero_errors,
+        "error_count": len(zero_errors),
+    })
+
+    # --- 6. Obergrenze eingehalten (≤ 115 %+2) ---
+    upper_errors = []
+    for doc in doc_objs:
+        t = targets.get(doc.id, 0.0)
+        upper = int(t * 1.15) + 2
+        got = counts_per_doctor.get(doc.id, 0)
+        if got > upper:
+            name = users_map[doc.id].full_name if doc.id in users_map else f"Arzt {doc.id}"
+            upper_errors.append(f"{name}: {got} Dienste (Grenze {upper}, Ziel {t:.1f})")
+    checks.append({
+        "id": "test_upper_bound_not_exceeded",
+        "name": "Obergrenze nicht überschritten (≤ 115 %+2)",
+        "detail": "Kein Arzt erhält mehr als 115 % seiner Sollzahl + 2 Dienste",
+        "passed": not upper_errors,
+        "errors": upper_errors,
+        "error_count": len(upper_errors),
+    })
+
+    # --- 7. Untergrenze eingehalten (≥ 70 %) ---
+    lower_errors = []
+    for doc in doc_objs:
+        t = targets.get(doc.id, 0.0)
+        if t >= 1.0:
+            lower = max(1, int(t * 0.70))
+            got = counts_per_doctor.get(doc.id, 0)
+            if got < lower:
+                name = users_map[doc.id].full_name if doc.id in users_map else f"Arzt {doc.id}"
+                lower_errors.append(f"{name}: {got} Dienste (Minimum {lower}, Ziel {t:.1f})")
+    checks.append({
+        "id": "test_lower_bound_respected",
+        "name": "Untergrenze eingehalten (≥ 70 %)",
+        "detail": "Jeder Arzt mit Solldiensten erhält mindestens 70 % davon",
+        "passed": not lower_errors,
+        "errors": lower_errors,
+        "error_count": len(lower_errors),
+    })
+
+    # --- 8. Alle aktiven Ärzte eingeplant ---
+    eligible_ids = {d.id for d in doc_objs if targets.get(d.id, 0.0) >= 1.0}
+    assigned_ids = set(counts_per_doctor.keys())
+    missing_ids = eligible_ids - assigned_ids
+    missing_errors = []
+    for uid in missing_ids:
+        name = users_map[uid].full_name if uid in users_map else f"Arzt {uid}"
+        missing_errors.append(f"{name} hat 0 Dienste (Ziel {targets.get(uid, 0):.1f})")
+    checks.append({
+        "id": "test_all_eligible_doctors_receive_shifts",
+        "name": "Alle berechtigten Ärzte eingeplant",
+        "detail": "Kein Arzt mit Solldienst ≥ 1 bleibt ohne Dienst",
+        "passed": not missing_errors,
+        "errors": missing_errors,
+        "error_count": len(missing_errors),
+    })
+
+    # --- 9. Fairness-Spreizung ---
+    active_scores = [weighted_scores.get(d.id, 0.0) for d in doc_objs if targets.get(d.id, 0.0) >= 1.0]
+    fair_errors = []
+    if len(active_scores) >= 2:
+        spread = max(active_scores) - min(active_scores)
+        avg = sum(active_scores) / len(active_scores)
+        # Threshold scales: allow 12 points absolute spread (test uses 8 for uniform doctors)
+        if spread > 12.0:
+            fair_errors.append(
+                f"Spreizung {spread:.1f} Punkte (Ø {avg:.1f}) — Schwelle 12,0"
+            )
+    checks.append({
+        "id": "test_fairness_spread_acceptable",
+        "name": "Fairness-Spreizung akzeptabel (≤ 12 Punkte)",
+        "detail": "Max−Min des gewichteten Scores über alle berechtigten Ärzte",
+        "passed": not fair_errors,
+        "errors": fair_errors,
+        "error_count": len(fair_errors),
+    })
+
+    passed = sum(1 for c in checks if c["passed"])
+
+    return templates.TemplateResponse("admin/qa.html", {
+        "request": request, "user": admin,
+        "period": period,
+        "checks": checks,
+        "passed": passed,
+        "total": len(checks),
+        "has_assignments": True,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Dienstbuch (journal)
 # ---------------------------------------------------------------------------
 

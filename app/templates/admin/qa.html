@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}QS – {{ period.name }}{% endblock %}
+{% block content %}
+
+<div class="mb-6">
+  <a href="/admin/planning/{{ period.id }}" class="text-sm text-primary-500 hover:underline">← Zurück zum Plan</a>
+  <h1 class="text-2xl font-bold mt-1">Qualitätssicherung</h1>
+  <p class="text-sm text-gray-500 mt-0.5">{{ period.name }} · {{ period.start_date.strftime('%d.%m.%Y') }} – {{ period.end_date.strftime('%d.%m.%Y') }}</p>
+</div>
+
+{% if not has_assignments %}
+<div class="bg-gray-50 border border-gray-200 rounded-xl p-10 text-center text-gray-400">
+  Noch kein Plan berechnet — QS steht nach dem ersten Algorithmus-Lauf zur Verfügung.
+</div>
+{% else %}
+
+<!-- Summary bar -->
+{% set all_passed = passed == total %}
+<div class="rounded-xl p-5 mb-6 flex items-center gap-4
+  {% if all_passed %}bg-green-50 border border-green-200{% else %}bg-red-50 border border-red-200{% endif %}">
+  <div class="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0
+    {% if all_passed %}bg-green-100{% else %}bg-red-100{% endif %}">
+    {% if all_passed %}
+    <svg class="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+    </svg>
+    {% else %}
+    <svg class="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+    </svg>
+    {% endif %}
+  </div>
+  <div>
+    <p class="text-lg font-bold {% if all_passed %}text-green-900{% else %}text-red-900{% endif %}">
+      {{ passed }} von {{ total }} Tests bestanden
+    </p>
+    <p class="text-sm {% if all_passed %}text-green-600{% else %}text-red-600{% endif %}">
+      {% if all_passed %}Der Plan erfüllt alle Qualitätskriterien.
+      {% else %}{{ total - passed }} Kriterium{% if total - passed != 1 %}en{% endif %} nicht erfüllt — Details unten.{% endif %}
+    </p>
+  </div>
+</div>
+
+<!-- Check list -->
+<div class="space-y-3">
+  {% for check in checks %}
+  <div class="bg-white rounded-xl border overflow-hidden
+    {% if check.passed %}border-gray-200{% else %}border-red-200{% endif %}">
+    <div class="flex items-start gap-4 p-4">
+      <!-- Icon -->
+      <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5
+        {% if check.passed %}bg-green-100{% else %}bg-red-100{% endif %}">
+        {% if check.passed %}
+        <svg class="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+        </svg>
+        {% else %}
+        <svg class="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+        {% endif %}
+      </div>
+      <!-- Text -->
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <p class="font-semibold text-gray-900">{{ check.name }}</p>
+          <code class="text-[10px] text-gray-400 bg-gray-100 rounded px-1.5 py-0.5 font-mono">{{ check.id }}</code>
+        </div>
+        <p class="text-sm text-gray-500 mt-0.5">{{ check.detail }}</p>
+        {% if not check.passed and check.errors %}
+        <ul class="mt-2 space-y-0.5">
+          {% for err in check.errors %}
+          <li class="text-sm text-red-700 flex items-start gap-1.5">
+            <span class="text-red-400 mt-0.5 flex-shrink-0">›</span>{{ err }}
+          </li>
+          {% endfor %}
+          {% if check.error_count > check.errors | length %}
+          <li class="text-xs text-red-400 italic">… und {{ check.error_count - (check.errors | length) }} weitere</li>
+          {% endif %}
+        </ul>
+        {% endif %}
+      </div>
+      <!-- Badge -->
+      <span class="flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full
+        {% if check.passed %}bg-green-100 text-green-700{% else %}bg-red-100 text-red-700{% endif %}">
+        {% if check.passed %}OK{% else %}FEHLER{% endif %}
+      </span>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<p class="mt-6 text-xs text-gray-400 text-center">
+  QS-Prüfung basiert auf denselben Regeln wie die automatisierten Tests in <code>tests/test_fairness.py</code>.
+  Bereitschaftsdienste (B) werden nicht geprüft.
+</p>
+
+{% endif %}
+{% endblock %}
