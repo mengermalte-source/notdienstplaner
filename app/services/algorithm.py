@@ -1,3 +1,4 @@
+import random
 from datetime import date
 from ortools.sat.python import cp_model
 
@@ -172,6 +173,7 @@ def solve_schedule(
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit_seconds
+    solver.parameters.random_seed = random.randint(0, 2**31 - 1)
     status = solver.solve(model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -252,6 +254,7 @@ def solve_substitute_schedule(
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit_seconds
+    solver.parameters.random_seed = random.randint(0, 2**31 - 1)
     status = solver.solve(model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
