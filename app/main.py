@@ -107,15 +107,17 @@ async def _ensure_periods():
 
     today = date.today()
     to_ensure = []
-    for year in [today.year, today.year + 1]:
+    for year in range(today.year - 1, today.year + 4):
+        yy = year % 100
+        yy1 = (year + 1) % 100
         to_ensure.append(dict(
-            name=f"Notdienstplan Winter/Frühling {year}",
+            name=f"{yy:02d}: Winter-Frühling",
             start_date=date(year, 1, 10),
             end_date=date(year, 6, 30),
             year=year,
         ))
         to_ensure.append(dict(
-            name=f"Notdienstplan Sommer/Herbst {year}/{year + 1}",
+            name=f"{yy:02d}/{yy1:02d}: Sommer-Herbst",
             start_date=date(year, 7, 1),
             end_date=date(year + 1, 1, 9),
             year=year,
@@ -128,6 +130,8 @@ async def _ensure_periods():
             )).scalars().first()
             if not exists:
                 session.add(PlanningPeriod(**p))
+            elif exists.name != p["name"]:
+                exists.name = p["name"]
         await session.commit()
 
 
@@ -291,24 +295,36 @@ async def nav_period_selector(
     from sqlmodel import select
     from datetime import date as date_type
 
-    periods = (await session.exec(
+    today = date_type.today()
+    all_periods = (await session.exec(
         select(PlanningPeriod).order_by(PlanningPeriod.start_date.desc())
     )).all()
 
     current_pid = request.cookies.get("admin_period_id", "")
-    if not current_pid and periods:
-        today = date_type.today()
-        active = next((p for p in reversed(list(periods)) if p.start_date <= today <= p.end_date), None)
+    if not current_pid and all_periods:
+        active = next((p for p in reversed(list(all_periods)) if p.start_date <= today <= p.end_date), None)
         if not active:
-            active = next((p for p in reversed(list(periods)) if p.start_date > today), None)
+            active = next((p for p in reversed(list(all_periods)) if p.start_date > today), None)
         if not active:
-            active = periods[0]
+            active = all_periods[0]
         current_pid = str(active.id)
+
+    # Show: periods that ended within the last 6 months, or haven't ended yet
+    from datetime import timedelta
+    cutoff = today - timedelta(days=180)
+    visible = [p for p in all_periods if p.end_date >= cutoff]
+    # Always include the currently selected period even if it's older
+    if current_pid and not any(str(p.id) == current_pid for p in visible):
+        extra = next((p for p in all_periods if str(p.id) == current_pid), None)
+        if extra:
+            visible.append(extra)
+            visible.sort(key=lambda p: p.start_date, reverse=True)
 
     return _templates.TemplateResponse("partials/period_selector.html", {
         "request": request,
-        "periods": periods,
+        "periods": visible,
         "current_pid": current_pid,
+        "today": today,
     })
 
 
