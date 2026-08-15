@@ -108,7 +108,7 @@ async def planning_page(request: Request, session: AsyncSession = Depends(get_se
         "request": request, "user": admin,
         "period": None, "assignments": [], "users": {}, "doctors": [],
         "scores": {}, "periods": [], "error": None,
-        "qa_passed": None, "qa_total": None, "show_list": False,
+        "qa_passed": None, "qa_total": None, "fairness_rows": [], "show_list": False,
         "month": None, "all_months": [], "duties_by_date": {},
         "doctor_colors": {}, "prev_url": None, "next_url": None,
     })
@@ -506,6 +506,38 @@ async def period_detail(
         qa_passed = sum(1 for c in checks if c["passed"])
         qa_total = len(checks)
 
+        # Fairness-Übersicht
+        from collections import Counter as _Counter
+        primary_assignments = [a for a in assignments if not a.is_substitute]
+        total_credit = sum(
+            profiles_map[d.id].credit_factor if d.id in profiles_map else 1.0
+            for d in doctors
+        ) or 1.0
+        total_weighted = sum(get_day_weight(a.date, set()) for a in primary_assignments)
+        shift_counts = _Counter(a.user_id for a in primary_assignments)
+        w_scores_map: dict[int, float] = {}
+        for a in primary_assignments:
+            w_scores_map[a.user_id] = w_scores_map.get(a.user_id, 0.0) + get_day_weight(a.date, set())
+        fairness_rows = []
+        for doc in doctors:
+            cf = profiles_map[doc.id].credit_factor if doc.id in profiles_map else 1.0
+            if cf == 0.0:
+                continue
+            target_w = (cf / total_credit) * total_weighted
+            actual_w = w_scores_map.get(doc.id, 0.0)
+            delta = round(actual_w - target_w, 1)
+            fairness_rows.append({
+                "name": doc.full_name,
+                "short": doc.full_name.split()[-1],
+                "count": shift_counts.get(doc.id, 0),
+                "score": round(actual_w, 1),
+                "target": round(target_w, 1),
+                "delta": delta,
+            })
+        fairness_rows.sort(key=lambda r: abs(r["delta"]), reverse=True)
+    else:
+        fairness_rows = []
+
     # Calendar data (always computed)
     duties_by_date: dict = defaultdict(list)
     for a in assignments:
@@ -544,6 +576,7 @@ async def period_detail(
         "error": error,
         "qa_passed": qa_passed,
         "qa_total": qa_total,
+        "fairness_rows": fairness_rows,
         "show_list": (view == "list"),
         "month": current_month_data,
         "all_months": all_months,
