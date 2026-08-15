@@ -33,3 +33,4 @@ class ShiftAssignment(SQLModel, table=True):
     is_manual_override: bool = False   # True wenn Admin nachträglich geändert hat
     weighted_score: float = 1.0        # Fairness-Gewicht (1.0 normal, höher = Sonderbelastung)
     acknowledged_at: Optional[datetime] = None  # Arzt hat Dienst bestätigt
+    is_substitute: bool = Field(default=False)  # True = Bereitschaftsdienst (Dez–Apr)
