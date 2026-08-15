@@ -160,7 +160,7 @@
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
         </svg>
-        <span x-text="loading ? 'Wird berechnet …' : 'Plan erstellen'">Plan erstellen</span>
+        <span x-text="loading ? 'Wird berechnet …' : 'Plan generieren'">Plan generieren</span>
       </button>
     </form>
     {% if assignments %}
@@ -385,7 +385,7 @@
 {% endif %}
 
 {% else %}
-<p class="text-gray-400 text-center py-12">Noch kein Plan berechnet. Plan erstellen.</p>
+<p class="text-gray-400 text-center py-12">Noch kein Plan berechnet. Plan generieren.</p>
 {% endif %}
 {% endif %}
 {% endblock %}
