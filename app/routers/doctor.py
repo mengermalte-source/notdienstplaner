@@ -11,6 +11,7 @@ from app.deps import get_current_user
 from app.models.user import User, DoctorProfile, UserRole, DayPreference
 from app.models.wish import WishEntry, WishType, WishPriority
 from app.models.vacation import VacationPeriod
+from app.models.recurring_block import RecurringBlock
 from app.models.schedule import ShiftAssignment, PlanningPeriod, PlanStatus
 from app.services.auth import hash_password, verify_password
 from app.services.ical import build_ical
@@ -47,10 +48,15 @@ async def wishes_page(request: Request, user: User = Depends(get_current_user),
     profile = (await session.exec(
         select(DoctorProfile).where(DoctorProfile.user_id == user.id)
     )).first()
+    recurring_blocks = (await session.exec(
+        select(RecurringBlock).where(RecurringBlock.user_id == user.id)
+        .order_by(RecurringBlock.month, RecurringBlock.day)
+    )).all()
     return templates.TemplateResponse("doctor/wishes.html",
         {"request": request, "user": user, "wishes": wishes,
          "wish_types": WishType, "priorities": WishPriority,
-         "vacations": vacations, "profile": profile})
+         "vacations": vacations, "profile": profile,
+         "recurring_blocks": recurring_blocks})
 
 
 @router.post("/desired-shifts")
@@ -149,6 +155,48 @@ async def delete_vacation(
     vac = await session.get(VacationPeriod, vac_id)
     if vac and vac.user_id == user.id:
         await session.delete(vac)
+        await session.commit()
+    return RedirectResponse("/me/wishes", status_code=302)
+
+
+_MONTH_NAMES_DE = [
+    "Januar", "Februar", "Maerz", "April", "Mai", "Juni",
+    "Juli", "August", "September", "Oktober", "November", "Dezember"
+]
+
+
+@router.post("/blocked-days")
+async def add_blocked_day(
+    month: int = Form(...),
+    day: int = Form(...),
+    reason: str = Form(""),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return RedirectResponse("/me/wishes", status_code=302)
+    existing = (await session.exec(
+        select(RecurringBlock).where(
+            RecurringBlock.user_id == user.id,
+            RecurringBlock.month == month,
+            RecurringBlock.day == day,
+        )
+    )).first()
+    if not existing:
+        session.add(RecurringBlock(user_id=user.id, month=month, day=day, reason=reason))
+        await session.commit()
+    return RedirectResponse("/me/wishes", status_code=302)
+
+
+@router.post("/blocked-days/{block_id}/delete")
+async def delete_blocked_day(
+    block_id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    block = await session.get(RecurringBlock, block_id)
+    if block and block.user_id == user.id:
+        await session.delete(block)
         await session.commit()
     return RedirectResponse("/me/wishes", status_code=302)
 

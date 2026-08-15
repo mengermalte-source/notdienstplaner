@@ -165,6 +165,13 @@ async def run_algorithm(
         )
     )).all()
 
+    from app.models.recurring_block import RecurringBlock as RecurringBlockModel
+    recurring_blocks = (await session.exec(
+        select(RecurringBlockModel).where(
+            RecurringBlockModel.user_id.in_([u.id for u in doctors])
+        )
+    )).all()
+
     # Tagesauswahl: Mi, Fr, Sa, So
     all_days = [
         period.start_date + timedelta(days=i)
@@ -201,7 +208,21 @@ async def run_algorithm(
                 ))
             cur += timedelta(days=1)
 
-    all_wishes = list(wishes) + vac_wishes
+    # Expand recurring annual blocks to service days in this period
+    recurring_wishes = []
+    for rb in recurring_blocks:
+        for d in days:
+            try:
+                from datetime import date as _date
+                if d.month == rb.month and d.day == rb.day:
+                    recurring_wishes.append(SimpleNamespace(
+                        user_id=rb.user_id, date=d,
+                        wish_type="negative", priority="hard",
+                    ))
+            except Exception:
+                pass
+
+    all_wishes = list(wishes) + vac_wishes + recurring_wishes
 
     # Feiertagsübertrag aus früheren Perioden laden
     all_carryovers = (await session.exec(
@@ -251,11 +272,47 @@ async def run_algorithm(
             weighted_score=get_day_weight(day, holiday_dates),
         ))
     await session.commit()
+
+    # Auto-run substitute (Bereitschaft) for Dec–Apr overlap
+    all_days_period = [
+        period.start_date + timedelta(days=i)
+        for i in range((period.end_date - period.start_date).days + 1)
+    ]
+    sub_days = [
+        d for d in all_days_period
+        if d.month in (12, 1, 2, 3, 4) and d.weekday() in (2, 4, 5, 6)
+    ]
+    if sub_days:
+        primary_set = set(assignments)
+
+        class _SubDoc:
+            def __init__(self, user, profile):
+                self.id = user.id
+                self.credit_factor = profile.credit_factor if profile else 1.0
+                self.carried_over_score = profile.sub_carried_over_score if profile else 0.0
+                self.desired_shifts = None
+                self.day_preference = "alle"
+
+        sub_doctor_objs = [_SubDoc(u, profiles.get(u.id)) for u in doctors]
+        sub_assignments = solve_substitute_schedule(
+            sub_doctor_objs, sub_days, primary_set, all_wishes, holiday_dates
+        )
+        if sub_assignments:
+            for user_id, day in sub_assignments:
+                session.add(ShiftAssignment(
+                    planning_period_id=period_id,
+                    user_id=user_id,
+                    date=day,
+                    weighted_score=get_day_weight(day, holiday_dates),
+                    is_substitute=True,
+                ))
+            await session.commit()
+
     return RedirectResponse(f"/admin/planning/{period_id}", status_code=302)
 
 
 # ---------------------------------------------------------------------------
-# Run substitute algorithm (Bereitschaft Dez–Apr)
+# Run substitute algorithm (Bereitschaft Dez–Apr) — kept for manual re-run
 # ---------------------------------------------------------------------------
 
 @router.post("/{period_id}/run-substitute")
@@ -358,6 +415,8 @@ async def run_substitute_algorithm(
 async def period_detail(
     period_id: int, request: Request,
     error: Optional[str] = Query(None),
+    view: Optional[str] = Query(None),
+    month: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_session),
     admin: User = Depends(require_admin),
 ):
@@ -391,9 +450,46 @@ async def period_detail(
                 VacationPeriod.start_date <= period.end_date,
             )
         )).all()
-        checks = _run_qa_checks(assignments, period, doctors, profiles_map, wishes, vacations)
+        from app.models.recurring_block import RecurringBlock as RecurringBlockModel
+        recurring_blocks_qa = (await session.exec(
+            select(RecurringBlockModel).where(
+                RecurringBlockModel.user_id.in_([d.id for d in doctors])
+            )
+        )).all()
+        checks = _run_qa_checks(assignments, period, doctors, profiles_map, wishes, vacations, recurring_blocks_qa)
         qa_passed = sum(1 for c in checks if c["passed"])
         qa_total = len(checks)
+
+    # Calendar data (always computed)
+    duties_by_date: dict = defaultdict(list)
+    for a in assignments:
+        if a.user_id in users and not a.is_substitute:
+            duties_by_date[a.date].append(users[a.user_id])
+
+    all_months = _build_months(period.start_date, period.end_date)
+    sel_year, sel_month_num = None, None
+    if month:
+        try:
+            sel_year, sel_month_num = map(int, month.split("-"))
+        except (ValueError, AttributeError):
+            pass
+    if sel_year is None:
+        today_d = date_type.today()
+        if period.start_date <= today_d <= period.end_date:
+            sel_year, sel_month_num = today_d.year, today_d.month
+        else:
+            sel_year, sel_month_num = all_months[0]["year"], all_months[0]["month"]
+    current_idx = next(
+        (i for i, mo in enumerate(all_months) if mo["year"] == sel_year and mo["month"] == sel_month_num),
+        0,
+    )
+    current_month_data = all_months[current_idx]
+
+    def month_url(idx: int) -> Optional[str]:
+        if 0 <= idx < len(all_months):
+            mo = all_months[idx]
+            return f"/admin/planning/{period_id}?month={mo['year']}-{mo['month']:02d}"
+        return None
 
     return templates.TemplateResponse("admin/planning.html", {
         "request": request, "user": admin,
@@ -402,6 +498,13 @@ async def period_detail(
         "error": error,
         "qa_passed": qa_passed,
         "qa_total": qa_total,
+        "show_list": (view == "list"),
+        "month": current_month_data,
+        "all_months": all_months,
+        "duties_by_date": dict(duties_by_date),
+        "doctor_colors": _build_doctor_colors(users),
+        "prev_url": month_url(current_idx - 1),
+        "next_url": month_url(current_idx + 1),
     })
 
 
@@ -416,55 +519,10 @@ async def period_calendar(
     session: AsyncSession = Depends(get_session),
     admin: User = Depends(require_admin),
 ):
-    period = await session.get(PlanningPeriod, period_id)
-    assignments = (await session.exec(
-        select(ShiftAssignment)
-        .where(ShiftAssignment.planning_period_id == period_id)
-        .order_by(ShiftAssignment.date)
-    )).all()
-    users = {u.id: u for u in (await session.exec(select(User))).all()}
-    duties_by_date: dict = defaultdict(list)
-    for a in assignments:
-        if a.user_id in users:
-            duties_by_date[a.date].append(users[a.user_id])
-
-    all_months = _build_months(period.start_date, period.end_date)
-
-    sel_year, sel_month = None, None
+    dest = f"/admin/planning/{period_id}"
     if month:
-        try:
-            sel_year, sel_month = map(int, month.split("-"))
-        except (ValueError, AttributeError):
-            pass
-    if sel_year is None:
-        today = date_type.today()
-        if period.start_date <= today <= period.end_date:
-            sel_year, sel_month = today.year, today.month
-        else:
-            sel_year, sel_month = all_months[0]["year"], all_months[0]["month"]
-
-    current_idx = next(
-        (i for i, mo in enumerate(all_months) if mo["year"] == sel_year and mo["month"] == sel_month),
-        0,
-    )
-    current_month = all_months[current_idx]
-
-    def month_url(idx: int) -> Optional[str]:
-        if 0 <= idx < len(all_months):
-            mo = all_months[idx]
-            return f"/admin/planning/{period_id}/calendar?month={mo['year']}-{mo['month']:02d}"
-        return None
-
-    return templates.TemplateResponse("admin/calendar_view.html", {
-        "request": request, "user": admin,
-        "period": period,
-        "month": current_month,
-        "all_months": all_months,
-        "duties_by_date": dict(duties_by_date),
-        "doctor_colors": _build_doctor_colors(users),
-        "prev_url": month_url(current_idx - 1),
-        "next_url": month_url(current_idx + 1),
-    })
+        dest += f"?month={month}"
+    return RedirectResponse(dest, status_code=302)
 
 
 # ---------------------------------------------------------------------------
@@ -487,7 +545,7 @@ def _qa_compute_targets(doctors: list, service_days: list, holiday_dates: set) -
 
 
 def _run_qa_checks(assignments: list, period, doctors: list, profiles_map: dict,
-                   wishes: list, vacations: list) -> list[dict]:
+                   wishes: list, vacations: list, recurring_blocks=None) -> list[dict]:
     from collections import Counter
     holiday_dates: set = set()
     users_map = {d.id: d for d in doctors}
@@ -530,6 +588,18 @@ def _run_qa_checks(assignments: list, period, doctors: list, profiles_map: dict,
             if cur.weekday() in (2, 4, 5, 6):
                 vacation_blocked.add((vp.user_id, cur))
             cur += timedelta(days=1)
+
+    # Expand recurring blocks for this period
+    recurring_blocked: set = set()
+    if recurring_blocks:
+        all_period_days = [
+            period.start_date + timedelta(days=i)
+            for i in range((period.end_date - period.start_date).days + 1)
+        ]
+        for rb in recurring_blocks:
+            for d in all_period_days:
+                if d.month == rb.month and d.day == rb.day and d.weekday() in (2, 4, 5, 6):
+                    recurring_blocked.add((rb.user_id, d))
 
     checks: list[dict] = []
 
@@ -686,6 +756,21 @@ def _run_qa_checks(assignments: list, period, doctors: list, profiles_map: dict,
         "error_count": len(fair_errors),
     })
 
+    # 10. Recurring blocks respected
+    recur_errors = []
+    for uid, d in recurring_blocked:
+        if (uid, d) in assignment_set:
+            name = users_map[uid].full_name if uid in users_map else f"Arzt {uid}"
+            recur_errors.append(f"{name} am {d.strftime('%d.%m.%Y')} (jaehrl. Sperre {d.day}.{d.month}.)")
+    checks.append({
+        "id": "test_recurring_blocks_respected",
+        "name": "Jaehrliche Sperrtage eingehalten",
+        "detail": "Kein Dienst an jahresuebergreifend gesperrten Daten",
+        "passed": not recur_errors,
+        "errors": recur_errors,
+        "error_count": len(recur_errors),
+    })
+
     return checks
 
 
@@ -723,8 +808,14 @@ async def period_qa(
             VacationPeriod.start_date <= period.end_date,
         )
     )).all()
+    from app.models.recurring_block import RecurringBlock as RecurringBlockModel
+    recurring_blocks_qa = (await session.exec(
+        select(RecurringBlockModel).where(
+            RecurringBlockModel.user_id.in_([d.id for d in doctors])
+        )
+    )).all()
 
-    checks = _run_qa_checks(assignments, period, doctors, profiles_map, wishes, vacations)
+    checks = _run_qa_checks(assignments, period, doctors, profiles_map, wishes, vacations, recurring_blocks_qa)
     passed = sum(1 for c in checks if c["passed"])
 
     return templates.TemplateResponse("admin/qa.html", {
@@ -734,38 +825,6 @@ async def period_qa(
         "passed": passed,
         "total": len(checks),
         "has_assignments": True,
-    })
-
-
-# ---------------------------------------------------------------------------
-# Dienstbuch (journal)
-# ---------------------------------------------------------------------------
-
-@router.get("/{period_id}/journal", response_class=HTMLResponse)
-async def period_journal(
-    period_id: int, request: Request,
-    session: AsyncSession = Depends(get_session),
-    admin: User = Depends(require_admin),
-):
-    period = await session.get(PlanningPeriod, period_id)
-    assignments = (await session.exec(
-        select(ShiftAssignment)
-        .where(ShiftAssignment.planning_period_id == period_id)
-        .order_by(ShiftAssignment.date)
-    )).all()
-    users = {u.id: u for u in (await session.exec(select(User))).all()}
-    profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
-
-    confirmed = sum(1 for a in assignments if a.acknowledged_at)
-    overridden = sum(1 for a in assignments if a.is_manual_override)
-
-    return templates.TemplateResponse("admin/journal.html", {
-        "request": request, "user": admin,
-        "period": period, "assignments": assignments,
-        "users": users, "profiles": profiles,
-        "weekday_names": _WEEKDAY_NAMES,
-        "confirmed": confirmed, "overridden": overridden,
-        "total": len(assignments),
     })
 
 

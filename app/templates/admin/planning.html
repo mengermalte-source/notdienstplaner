@@ -95,13 +95,23 @@
       </p>
     </div>
     <div class="flex flex-wrap gap-2 flex-shrink-0">
-      <a href="/admin/planning/{{ period.id }}/calendar"
+      {% if show_list %}
+      <a href="/admin/planning/{{ period.id }}"
          class="text-sm bg-white border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50 flex items-center gap-1.5">
         <svg class="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
         </svg>
         Kalender
       </a>
+      {% else %}
+      <a href="/admin/planning/{{ period.id }}?view=list"
+         class="text-sm bg-white border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50 flex items-center gap-1.5">
+        <svg class="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+        </svg>
+        Liste
+      </a>
+      {% endif %}
       <a href="/admin/planning/{{ period.id }}/substitute"
          class="text-sm bg-white border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50 flex items-center gap-1.5">
         <svg class="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -179,17 +189,9 @@
         </span>
       </div>
       <button type="submit" class="bg-accent-500 text-white px-4 py-2 rounded-lg hover:bg-accent-700 text-sm">
-        Algorithmus ausführen
+        Plan erstellen
       </button>
     </form>
-    {% if assignments %}
-    <form method="post" action="/admin/planning/{{ period.id }}/run-substitute" class="inline">
-      <button type="submit"
-              class="bg-amber-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-amber-700 text-sm">
-        Bereitschaft planen (Dez–Apr)
-      </button>
-    </form>
-    {% endif %}
     {% if period.status == 'draft' and assignments %}
     <form method="post" action="/admin/planning/{{ period.id }}/publish">
       <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm">
@@ -201,6 +203,9 @@
 </div>
 
 {% if assignments %}
+
+{% if show_list %}
+<!-- List view -->
 <div class="bg-white rounded-lg shadow overflow-hidden">
   <div class="overflow-x-auto">
     <table class="w-full text-sm min-w-[400px]">
@@ -287,8 +292,106 @@
     </table>
   </div>
 </div>
+
 {% else %}
-<p class="text-gray-400 text-center py-12">Noch kein Plan berechnet. Algorithmus ausführen.</p>
+<!-- Calendar view (default) -->
+
+<!-- Legend -->
+<div class="flex flex-wrap gap-2 mb-5">
+  {% set shown_doctors = [] %}
+  {% for date_duties in duties_by_date.values() %}
+    {% for doc in date_duties %}
+      {% if doc.id not in shown_doctors %}
+        {% set _ = shown_doctors.append(doc.id) %}
+        <span class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 font-medium">
+          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 {{ doctor_colors.get(doc.id, 'bg-gray-400') }}"></span>
+          {{ doc.full_name }}
+        </span>
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+</div>
+
+<!-- Month navigation -->
+<div class="flex items-center justify-between mb-4 gap-2">
+  <a href="{{ prev_url or '#' }}"
+     class="flex items-center gap-1 px-4 py-2 rounded-lg border font-medium text-sm transition-colors
+       {% if prev_url %}bg-white border-gray-300 text-gray-700 hover:bg-gray-50{% else %}bg-gray-50 border-gray-200 text-gray-300 pointer-events-none{% endif %}">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+    </svg>
+    Vorheriger
+  </a>
+  <div class="flex items-center gap-2">
+    <span class="text-xl font-bold text-gray-800">{{ month.name }} {{ month.year }}</span>
+    {% if all_months | length > 1 %}
+    <select onchange="window.location.href=this.value"
+            class="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-600 cursor-pointer">
+      {% for mo in all_months %}
+      <option value="/admin/planning/{{ period.id }}?month={{ mo.year }}-{{ '%02d' % mo.month }}"
+              {% if mo.year == month.year and mo.month == month.month %}selected{% endif %}>
+        {{ mo.name }} {{ mo.year }}
+      </option>
+      {% endfor %}
+    </select>
+    {% endif %}
+  </div>
+  <a href="{{ next_url or '#' }}"
+     class="flex items-center gap-1 px-4 py-2 rounded-lg border font-medium text-sm transition-colors
+       {% if next_url %}bg-white border-gray-300 text-gray-700 hover:bg-gray-50{% else %}bg-gray-50 border-gray-200 text-gray-300 pointer-events-none{% endif %}">
+    Nächster
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+    </svg>
+  </a>
+</div>
+
+<!-- Calendar grid -->
+<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+  <div class="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
+    {% for label, is_weekend in [('Mo', false), ('Di', false), ('Mi', false), ('Do', false), ('Fr', false), ('Sa', true), ('So', true)] %}
+    <div class="py-3 text-center text-sm font-semibold {% if is_weekend %}text-primary-500{% else %}text-gray-500{% endif %}">
+      {{ label }}
+    </div>
+    {% endfor %}
+  </div>
+  {% for week in month.weeks %}
+  <div class="grid grid-cols-7 border-b border-gray-100 last:border-b-0">
+    {% for d in week %}
+    {% if d is none %}
+    <div class="min-h-[100px] bg-gray-50 border-r border-gray-100 last:border-r-0"></div>
+    {% else %}
+    {% set in_range = d >= period.start_date and d <= period.end_date %}
+    {% set is_weekend = d.weekday() >= 5 %}
+    {% set duties = duties_by_date.get(d, []) %}
+    <div class="min-h-[100px] border-r border-gray-100 last:border-r-0 p-2 flex flex-col gap-1
+      {% if not in_range %}bg-gray-50 opacity-40{% elif is_weekend %}bg-primary-50{% else %}bg-white{% endif %}
+      {% if duties %}ring-inset ring-1 ring-primary-100{% endif %}">
+      <span class="text-sm font-bold leading-none
+        {% if is_weekend and in_range %}text-primary-500{% elif in_range %}text-gray-700{% else %}text-gray-400{% endif %}">
+        {{ d.day }}
+      </span>
+      <div class="flex flex-col gap-1 mt-0.5">
+        {% for doc in duties %}
+        {% set last_name = doc.full_name.split()[-1] if doc.full_name.split()|length > 1 else doc.full_name %}
+        <span class="text-white text-xs font-semibold rounded-md px-1.5 py-0.5 truncate leading-5
+          {{ doctor_colors.get(doc.id, 'bg-gray-400') }}"
+          title="{{ doc.full_name }}">
+          {{ last_name }}
+        </span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+
+{% endif %}
+
+{% else %}
+<p class="text-gray-400 text-center py-12">Noch kein Plan berechnet. Plan erstellen.</p>
 {% endif %}
 {% endif %}
 {% endblock %}
