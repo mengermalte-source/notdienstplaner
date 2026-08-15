@@ -11,6 +11,12 @@ class UserRole(str, Enum):
     admin = "admin"
 
 
+class DayPreference(str, Enum):
+    alle = "alle"
+    mittwoch = "mittwoch"
+    freitag = "freitag"
+
+
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(unique=True, index=True)
@@ -28,8 +34,8 @@ class DoctorProfile(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", unique=True)
     credit_factor: float = Field(default=1.0, ge=0.0, le=1.0)     # Anrechnungsfaktor
     desired_shifts: Optional[int] = Field(default=None, ge=0)      # None = Minimum
-    day_preference: str = Field(default="alle")                    # "alle"|"mittwoch"|"freitag"
-    sub_carried_over_score: float = 0.0                            # Bereitschafts-Fairness
+    day_preference: DayPreference = Field(default=DayPreference.alle)  # Tages-Präferenz
+    sub_carried_over_score: float = Field(default=0.0)             # Bereitschafts-Fairness
     part_time_factor: float = Field(default=1.0, ge=0.0, le=1.0)  # Legacy — nicht entfernen
     phone: str = ""
     notes: str = ""
