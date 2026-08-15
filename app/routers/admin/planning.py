@@ -21,7 +21,7 @@ from app.models.user import DoctorProfile, User, UserRole
 from app.models.wish import WishEntry, WishPriority, WishType
 from types import SimpleNamespace
 from app.models.vacation import VacationPeriod
-from app.services.algorithm import solve_schedule, solve_substitute_schedule, get_day_weight
+from app.services.algorithm import solve_schedule, solve_substitute_schedule, get_day_weight, get_day_coverage
 from app.services.fairness import compute_fairness_score, compute_target_duties
 from app.models.swap import SwapRequest, SwapStatus
 from app.services.email import send_coverage_request
@@ -448,7 +448,6 @@ async def period_calendar(
 # ---------------------------------------------------------------------------
 
 def _qa_compute_targets(doctors: list, service_days: list, holiday_dates: set) -> dict:
-    from app.services.algorithm import get_day_coverage
     total_slots = sum(get_day_coverage(d, holiday_dates) for d in service_days)
     fixed = [doc for doc in doctors if doc.desired_shifts is not None]
     flex = [doc for doc in doctors if doc.desired_shifts is None]
@@ -573,8 +572,8 @@ async def period_qa(
             wish_errors.append(f"{name} am {d.strftime('%d.%m.%Y')}")
     checks.append({
         "id": "test_hard_wishes_respected",
-        "name": "„Kann nicht"-Wünsche eingehalten",
-        "detail": "Kein Arzt arbeitet an einem als „Kann nicht" gesperrten Tag",
+        "name": "'Kann nicht'-Wuensche eingehalten",
+        "detail": "Kein Arzt arbeitet an einem als 'Kann nicht' gesperrten Tag",
         "passed": not wish_errors,
         "errors": wish_errors,
         "error_count": len(wish_errors),
