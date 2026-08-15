@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, Form, Request
 from fastapi.exceptions import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -270,20 +270,45 @@ async def admin_dashboard(
     })
 
 
-@app.get("/admin/substitute", response_class=HTMLResponse)
-async def admin_substitute_landing(
+
+@app.post("/admin/set-period")
+async def set_period(
+    period_id: int = Form(...),
+    admin: User = Depends(require_admin),
+):
+    response = RedirectResponse(f"/admin/planning/{period_id}", status_code=302)
+    response.set_cookie("admin_period_id", str(period_id), max_age=60 * 60 * 24 * 365, samesite="lax")
+    return response
+
+
+@app.get("/admin/nav/period-selector", response_class=HTMLResponse)
+async def nav_period_selector(
     request: Request,
     admin: User = Depends(require_admin),
     session=Depends(get_session),
 ):
-    from app.models.schedule import PlanningPeriod, PlanStatus
+    from app.models.schedule import PlanningPeriod
     from sqlmodel import select
+    from datetime import date as date_type
+
     periods = (await session.exec(
         select(PlanningPeriod).order_by(PlanningPeriod.start_date.desc())
     )).all()
-    published = [p for p in periods if p.status == PlanStatus.published]
-    return _templates.TemplateResponse("admin/substitute_landing.html", {
-        "request": request, "user": admin, "periods": published,
+
+    current_pid = request.cookies.get("admin_period_id", "")
+    if not current_pid and periods:
+        today = date_type.today()
+        active = next((p for p in reversed(list(periods)) if p.start_date <= today <= p.end_date), None)
+        if not active:
+            active = next((p for p in reversed(list(periods)) if p.start_date > today), None)
+        if not active:
+            active = periods[0]
+        current_pid = str(active.id)
+
+    return _templates.TemplateResponse("partials/period_selector.html", {
+        "request": request,
+        "periods": periods,
+        "current_pid": current_pid,
     })
 
 

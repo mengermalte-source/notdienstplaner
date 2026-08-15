@@ -24,7 +24,6 @@ from app.models.vacation import VacationPeriod
 from app.services.algorithm import solve_schedule, solve_substitute_schedule, get_day_weight, get_day_coverage
 from app.services.fairness import compute_fairness_score, compute_target_duties
 from app.models.swap import SwapRequest, SwapStatus
-from app.services.email import send_coverage_request
 
 router = APIRouter(prefix="/admin/planning", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates")
@@ -84,13 +83,34 @@ def _build_months(start: date_type, end: date_type) -> list:
 @router.get("", response_class=HTMLResponse)
 async def planning_page(request: Request, session: AsyncSession = Depends(get_session),
                         admin: User = Depends(require_admin)):
+    cookie_pid = request.cookies.get("admin_period_id")
+    if cookie_pid:
+        try:
+            period = await session.get(PlanningPeriod, int(cookie_pid))
+            if period:
+                return RedirectResponse(f"/admin/planning/{cookie_pid}", status_code=302)
+        except (ValueError, TypeError):
+            pass
+
     today = date_type.today()
     periods = (await session.exec(
-        select(PlanningPeriod).order_by(PlanningPeriod.start_date.desc())
+        select(PlanningPeriod).order_by(PlanningPeriod.start_date.asc())
     )).all()
+    active = next((p for p in periods if p.start_date <= today <= p.end_date), None)
+    if not active:
+        active = next((p for p in periods if p.start_date > today), None)
+    if not active and periods:
+        active = periods[-1]
+    if active:
+        return RedirectResponse(f"/admin/planning/{active.id}", status_code=302)
+
     return templates.TemplateResponse("admin/planning.html", {
         "request": request, "user": admin,
-        "periods": periods, "period": None, "assignments": [], "today": today,
+        "period": None, "assignments": [], "users": {}, "doctors": [],
+        "scores": {}, "periods": [], "error": None,
+        "qa_passed": None, "qa_total": None, "show_list": False,
+        "month": None, "all_months": [], "duties_by_date": {},
+        "doctor_colors": {}, "prev_url": None, "next_url": None,
     })
 
 
@@ -517,7 +537,7 @@ async def period_detail(
             return f"/admin/planning/{period_id}?month={mo['year']}-{mo['month']:02d}"
         return None
 
-    return templates.TemplateResponse("admin/planning.html", {
+    response = templates.TemplateResponse("admin/planning.html", {
         "request": request, "user": admin,
         "period": period, "assignments": assignments,
         "users": users, "doctors": doctors, "scores": scores, "periods": [],
@@ -532,6 +552,8 @@ async def period_detail(
         "prev_url": month_url(current_idx - 1),
         "next_url": month_url(current_idx + 1),
     })
+    response.set_cookie("admin_period_id", str(period_id), max_age=60 * 60 * 24 * 365, samesite="lax")
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -902,106 +924,6 @@ async def export_csv(
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
-
-# ---------------------------------------------------------------------------
-# Substitute finder (per period)
-# ---------------------------------------------------------------------------
-
-@router.get("/{period_id}/substitute", response_class=HTMLResponse)
-async def find_substitute(
-    period_id: int, request: Request,
-    date: Optional[str] = Query(None),
-    session: AsyncSession = Depends(get_session),
-    admin: User = Depends(require_admin),
-):
-    period = await session.get(PlanningPeriod, period_id)
-    candidates = []
-    target_date = None
-
-    if date:
-        target_date = date_type.fromisoformat(date)
-        all_doctors = (await session.exec(
-            select(User).where(User.role == UserRole.doctor, User.is_active == True)
-        )).all()
-        profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
-        already_assigned = {
-            a.user_id for a in (await session.exec(
-                select(ShiftAssignment).where(
-                    ShiftAssignment.planning_period_id == period_id,
-                    ShiftAssignment.date == target_date,
-                )
-            )).all()
-        }
-        cannot_work = {
-            w.user_id for w in (await session.exec(
-                select(WishEntry).where(
-                    WishEntry.date == target_date,
-                    WishEntry.wish_type == WishType.negative,
-                    WishEntry.priority == WishPriority.hard,
-                )
-            )).all()
-        }
-        all_period_assignments = (await session.exec(
-            select(ShiftAssignment).where(ShiftAssignment.planning_period_id == period_id)
-        )).all()
-        actual_scores: dict = defaultdict(float)
-        for a in all_period_assignments:
-            actual_scores[a.user_id] += a.weighted_score
-
-        for doc in all_doctors:
-            if doc.id in already_assigned:
-                status = "assigned"
-            elif doc.id in cannot_work:
-                status = "cannot"
-            else:
-                status = "available"
-            profile = profiles.get(doc.id)
-            candidates.append({
-                "user": doc, "profile": profile, "status": status,
-                "score": round(actual_scores.get(doc.id, 0.0), 1),
-            })
-        candidates.sort(key=lambda c: (0 if c["status"] == "available" else 1, c["score"]))
-
-    return templates.TemplateResponse("admin/substitute.html", {
-        "request": request, "user": admin,
-        "period": period, "target_date": target_date, "candidates": candidates,
-    })
-
-
-@router.post("/{period_id}/substitute/propose")
-async def propose_coverage(
-    period_id: int,
-    target_date: str = Form(...),
-    absent_doctor_id: int = Form(...),
-    substitute_id: int = Form(...),
-    message: str = Form(""),
-    session: AsyncSession = Depends(get_session),
-    admin: User = Depends(require_admin),
-):
-    shift_date = date_type.fromisoformat(target_date)
-    absent_doctor = await session.get(User, absent_doctor_id)
-    substitute = await session.get(User, substitute_id)
-    if not absent_doctor or not substitute:
-        return RedirectResponse(
-            f"/admin/planning/{period_id}/substitute?date={target_date}", status_code=302
-        )
-    session.add(SwapRequest(
-        requester_id=absent_doctor_id,
-        target_id=substitute_id,
-        requester_shift_date=shift_date,
-        target_shift_date=shift_date,
-        planning_period_id=period_id,
-        message=message,
-        is_coverage_request=True,
-    ))
-    await session.commit()
-    send_coverage_request(
-        substitute.email, substitute.full_name,
-        absent_doctor.full_name, shift_date, message,
-    )
-    return RedirectResponse(
-        f"/admin/planning/{period_id}/substitute?date={target_date}", status_code=302
-    )
 
 
 # ---------------------------------------------------------------------------

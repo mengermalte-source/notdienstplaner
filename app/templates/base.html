@@ -74,6 +74,7 @@
 
     <nav class="flex-1 px-3 py-5 overflow-y-auto space-y-0.5">
       {% if user and user.role == 'admin' %}
+      {% set nav_pid = request.cookies.get('admin_period_id', '') %}
 
       <p class="text-xs font-semibold text-primary-300 uppercase tracking-widest px-3 mb-3">Administration</p>
 
@@ -101,7 +102,9 @@
         Kalender
       </a>
 
-      <a href="/admin/planning" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+      <!-- Planung: period-aware link -->
+      <a href="{% if nav_pid %}/admin/planning/{{ nav_pid }}{% else %}/admin/planning{% endif %}"
+         @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
         {% if path.startswith('/admin/planning') %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
@@ -109,21 +112,21 @@
         Planung
       </a>
 
-      <a href="/admin/substitute" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-        {% if path.startswith('/admin/substitute') %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
-        </svg>
-        Vertretung
-      </a>
-
-      <a href="/admin/statistics" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+      <!-- Statistiken: period-aware link -->
+      <a href="{% if nav_pid %}/admin/statistics?period_id={{ nav_pid }}{% else %}/admin/statistics{% endif %}"
+         @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
         {% if path.startswith('/admin/statistics') %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
         </svg>
         Statistiken
       </a>
+
+      <!-- Period switcher -->
+      <div class="pt-3 border-t border-primary-900 mt-3"
+           hx-get="/admin/nav/period-selector" hx-trigger="load" hx-swap="outerHTML">
+        <div class="px-3 py-2 text-xs text-primary-500">Lade Zeiträume …</div>
+      </div>
 
       {% else %}
 
