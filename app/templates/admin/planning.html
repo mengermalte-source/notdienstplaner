@@ -13,8 +13,7 @@
       <div>
         <p class="font-semibold mb-1">Harte Regeln (werden immer eingehalten):</p>
         <ul class="space-y-1 text-blue-800">
-          <li>• Jeder geplante Tag wird mit genau <strong>{{ doctors_per_day|default(2) }} Ärzten</strong> besetzt</li>
-          <li>• Kein Arzt hat zwei <strong>aufeinanderfolgende</strong> Dienste</li>
+          <li>• <strong>Mi/Fr Nachmittag:</strong> je 1 Arzt · <strong>Sa/So/Feiertag:</strong> je 2 Ärzte</li>
           <li>• Zwischen zwei Wochenend-/Feiertagsdiensten liegen immer mindestens <strong>2 dienstfreie Wochenenden</strong></li>
           <li>• Ärzte mit Eintrag <strong>„Kann nicht"</strong> werden an diesem Tag nie eingeplant</li>
           <li>• Kein Arzt überschreitet seine faire Sollzahl um mehr als 15 %</li>
@@ -32,7 +31,7 @@
         </ul>
       </div>
     </div>
-    <p class="mt-2 text-blue-700"><strong>Abdeckung:</strong> Wähle beim Start des Algorithmus, welche Tage geplant werden sollen — nur Wochenenden, Wochenenden + Feiertage oder alle Tage.</p>
+    <p class="mt-2 text-blue-700"><strong>Feiertage</strong> zählen wie Wochenendtage (Gewicht 2,0) und benötigen ebenfalls 2 Ärzte, unabhängig vom Wochentag.</p>
   </div>
 </details>
 
@@ -130,12 +129,10 @@
 <div class="flex flex-wrap gap-3 mb-6">
   <form method="post" action="/admin/planning/{{ period.id }}/run" class="flex flex-wrap items-end gap-2">
     <div>
-      <label class="block text-xs font-medium text-gray-500 mb-1">Abdeckung</label>
-      <select name="coverage" class="border rounded-lg px-3 py-2 text-sm bg-white">
-        <option value="weekends">Nur Wochenenden</option>
-        <option value="weekends_holidays">Wochenenden + Feiertage</option>
-        <option value="all">Alle Tage</option>
-      </select>
+      <span class="block text-xs font-medium text-gray-500 mb-1">Abdeckung (fest)</span>
+      <span class="inline-flex items-center gap-1 border rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700">
+        Mi&nbsp;Nachmittag · Fr&nbsp;Nachmittag · Sa · So · Feiertage
+      </span>
     </div>
     <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm">
       Algorithmus ausführen
