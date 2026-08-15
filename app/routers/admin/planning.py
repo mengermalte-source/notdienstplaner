@@ -111,6 +111,7 @@ async def planning_page(request: Request, session: AsyncSession = Depends(get_se
         "qa_passed": None, "qa_total": None, "fairness_rows": [], "show_list": False, "show_fairness": False,
         "month": None, "all_months": [], "duties_by_date": {},
         "doctor_colors": {}, "prev_url": None, "next_url": None,
+        "day_pressure": {},
     })
 
 
@@ -455,23 +456,25 @@ async def period_detail(
     holiday_dates = set()
     scores = compute_fairness_score([(a.user_id, a.date) for a in assignments], holiday_dates)
 
+    # Load wishes and vacations (used for both QA and heatmap)
+    wishes = (await session.exec(
+        select(WishEntry).where(
+            WishEntry.date >= period.start_date,
+            WishEntry.date <= period.end_date,
+        )
+    )).all()
+    vacations = (await session.exec(
+        select(VacationPeriod).where(
+            VacationPeriod.end_date >= period.start_date,
+            VacationPeriod.start_date <= period.end_date,
+        )
+    )).all()
+
     # QS-Zusammenfassung
     qa_passed: Optional[int] = None
     qa_total: Optional[int] = None
     if any(not a.is_substitute for a in assignments):
         profiles_map = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
-        wishes = (await session.exec(
-            select(WishEntry).where(
-                WishEntry.date >= period.start_date,
-                WishEntry.date <= period.end_date,
-            )
-        )).all()
-        vacations = (await session.exec(
-            select(VacationPeriod).where(
-                VacationPeriod.end_date >= period.start_date,
-                VacationPeriod.start_date <= period.end_date,
-            )
-        )).all()
         from app.models.recurring_block import RecurringBlock as RecurringBlockModel
         recurring_blocks_qa = (await session.exec(
             select(RecurringBlockModel).where(
@@ -514,11 +517,32 @@ async def period_detail(
     else:
         fairness_rows = []
 
-    # Calendar data (always computed)
+    # Heatmap: count hard blocks per service day (Mi/Fr/Sa/So)
+    _neg_by_date: dict[date_type, int] = defaultdict(int)
+    for w in wishes:
+        if w.wish_type == WishType.negative and w.priority == WishPriority.hard:
+            _neg_by_date[w.date] += 1
+    _vac_by_date: dict[date_type, int] = defaultdict(int)
+    for vp in vacations:
+        cur_v = vp.start_date
+        while cur_v <= vp.end_date:
+            _vac_by_date[cur_v] += 1
+            cur_v += timedelta(days=1)
+    day_pressure: dict[date_type, dict] = {}
+    cur_p = period.start_date
+    while cur_p <= period.end_date:
+        if cur_p.weekday() in (2, 4, 5, 6):
+            neg = _neg_by_date.get(cur_p, 0)
+            vac = _vac_by_date.get(cur_p, 0)
+            if neg + vac > 0:
+                day_pressure[cur_p] = {"neg": neg, "vac": vac, "total": neg + vac}
+        cur_p += timedelta(days=1)
+
+    # Calendar data: include assignment_id for quick-edit
     duties_by_date: dict = defaultdict(list)
     for a in assignments:
         if a.user_id in users and not a.is_substitute:
-            duties_by_date[a.date].append(users[a.user_id])
+            duties_by_date[a.date].append({"assignment_id": a.id, "user": users[a.user_id]})
 
     all_months = _build_months(period.start_date, period.end_date)
     sel_year, sel_month_num = None, None
@@ -561,6 +585,7 @@ async def period_detail(
         "doctor_colors": _build_doctor_colors(users),
         "prev_url": month_url(current_idx - 1),
         "next_url": month_url(current_idx + 1),
+        "day_pressure": day_pressure,
     })
     response.set_cookie("admin_period_id", str(period_id), max_age=60 * 60 * 24 * 365, samesite="lax")
     return response
@@ -951,13 +976,17 @@ async def override_assignment(
     a = await session.get(ShiftAssignment, assignment_id)
     if not a or a.planning_period_id != period_id:
         return RedirectResponse(f"/admin/planning/{period_id}", status_code=302)
+    a_date = a.date
     a.user_id = new_user_id
     a.is_manual_override = True
     a.acknowledged_at = None
-    a.weighted_score = get_day_weight(a.date, set())
+    a.weighted_score = get_day_weight(a_date, set())
     session.add(a)
     await session.commit()
-    return RedirectResponse(f"/admin/planning/{period_id}", status_code=302)
+    return RedirectResponse(
+        f"/admin/planning/{period_id}?month={a_date.year}-{a_date.month:02d}",
+        status_code=302,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -73,7 +73,7 @@ async def set_desired_shifts(
         profile.desired_shifts = int(value) if value.isdigit() else None
         session.add(profile)
         await session.commit()
-    return RedirectResponse("/me/wishes", status_code=302)
+    return RedirectResponse("/me/wishes?tab=einstellungen", status_code=302)
 
 
 @router.post("/day-preference")
@@ -85,7 +85,7 @@ async def set_day_preference(
     try:
         pref = DayPreference(day_preference)
     except ValueError:
-        return RedirectResponse("/me/wishes", status_code=302)
+        return RedirectResponse("/me/wishes?tab=einstellungen", status_code=302)
     profile = (await session.exec(
         select(DoctorProfile).where(DoctorProfile.user_id == user.id)
     )).first()
@@ -93,7 +93,7 @@ async def set_day_preference(
         profile.day_preference = pref
         session.add(profile)
         await session.commit()
-    return RedirectResponse("/me/wishes", status_code=302)
+    return RedirectResponse("/me/wishes?tab=einstellungen", status_code=302)
 
 
 @router.post("/wishes")
@@ -115,7 +115,7 @@ async def create_wish(user: User = Depends(get_current_user),
     session.add(WishEntry(user_id=user.id, date=d, wish_type=wish_type,
                            priority=priority, reason=reason))
     await session.commit()
-    return RedirectResponse("/me/wishes", status_code=302)
+    return RedirectResponse("/me/wishes?tab=verfuegbarkeiten", status_code=302)
 
 
 @router.post("/wishes/{wish_id}/delete")
@@ -126,7 +126,7 @@ async def delete_wish(wish_id: int, user: User = Depends(get_current_user),
         raise HTTPException(status_code=404)
     await session.delete(wish)
     await session.commit()
-    return RedirectResponse("/me/wishes", status_code=302)
+    return RedirectResponse("/me/wishes?tab=verfuegbarkeiten", status_code=302)
 
 
 @router.post("/vacations")
@@ -143,7 +143,7 @@ async def add_vacation(
         return RedirectResponse("/me/wishes?error=Enddatum+vor+Startdatum", status_code=302)
     session.add(VacationPeriod(user_id=user.id, start_date=start, end_date=end, reason=reason))
     await session.commit()
-    return RedirectResponse("/me/wishes", status_code=302)
+    return RedirectResponse("/me/wishes?tab=urlaub", status_code=302)
 
 
 @router.post("/vacations/{vac_id}/delete")
@@ -156,7 +156,7 @@ async def delete_vacation(
     if vac and vac.user_id == user.id:
         await session.delete(vac)
         await session.commit()
-    return RedirectResponse("/me/wishes", status_code=302)
+    return RedirectResponse("/me/wishes?tab=urlaub", status_code=302)
 
 
 _MONTH_NAMES_DE = [
@@ -185,7 +185,7 @@ async def add_blocked_day(
     if not existing:
         session.add(RecurringBlock(user_id=user.id, month=month, day=day, reason=reason))
         await session.commit()
-    return RedirectResponse("/me/wishes", status_code=302)
+    return RedirectResponse("/me/wishes?tab=sperrtage", status_code=302)
 
 
 @router.post("/blocked-days/{block_id}/delete")
@@ -198,7 +198,7 @@ async def delete_blocked_day(
     if block and block.user_id == user.id:
         await session.delete(block)
         await session.commit()
-    return RedirectResponse("/me/wishes", status_code=302)
+    return RedirectResponse("/me/wishes?tab=sperrtage", status_code=302)
 
 
 @router.get("/schedule", response_class=HTMLResponse)
