@@ -4,12 +4,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
-from datetime import date as date_type, datetime
+from datetime import date as date_type, date as Date, datetime
 from collections import defaultdict
 from app.database import get_session
 from app.deps import get_current_user
 from app.models.user import User, DoctorProfile, UserRole
 from app.models.wish import WishEntry, WishType, WishPriority
+from app.models.vacation import VacationPeriod
 from app.models.schedule import ShiftAssignment, PlanningPeriod, PlanStatus
 from app.models.special_day import SpecialDay, SpecialDayCategory
 from app.services.auth import hash_password, verify_password
@@ -39,9 +40,14 @@ async def wishes_page(request: Request, user: User = Depends(get_current_user),
     wishes = (await session.exec(
         select(WishEntry).where(WishEntry.user_id == user.id)
         .order_by(WishEntry.date))).all()
+    vacations = (await session.exec(
+        select(VacationPeriod).where(VacationPeriod.user_id == user.id)
+        .order_by(VacationPeriod.start_date)
+    )).all()
     return templates.TemplateResponse("doctor/wishes.html",
         {"request": request, "user": user, "wishes": wishes,
-         "wish_types": WishType, "priorities": WishPriority})
+         "wish_types": WishType, "priorities": WishPriority,
+         "vacations": vacations})
 
 
 @router.post("/wishes")
@@ -74,6 +80,36 @@ async def delete_wish(wish_id: int, user: User = Depends(get_current_user),
         raise HTTPException(status_code=404)
     await session.delete(wish)
     await session.commit()
+    return RedirectResponse("/me/wishes", status_code=302)
+
+
+@router.post("/vacations")
+async def add_vacation(
+    start_date: str = Form(...),
+    end_date: str = Form(...),
+    reason: str = Form(""),
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    start = Date.fromisoformat(start_date)
+    end = Date.fromisoformat(end_date)
+    if end < start:
+        return RedirectResponse("/me/wishes?error=Enddatum+vor+Startdatum", status_code=302)
+    session.add(VacationPeriod(user_id=user.id, start_date=start, end_date=end, reason=reason))
+    await session.commit()
+    return RedirectResponse("/me/wishes", status_code=302)
+
+
+@router.post("/vacations/{vac_id}/delete")
+async def delete_vacation(
+    vac_id: int,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    vac = await session.get(VacationPeriod, vac_id)
+    if vac and vac.user_id == user.id:
+        await session.delete(vac)
+        await session.commit()
     return RedirectResponse("/me/wishes", status_code=302)
 
 

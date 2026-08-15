@@ -27,6 +27,7 @@ async def setup_test_db():
     import app.models.wish  # noqa: F401
     import app.models.special_day  # noqa: F401
     import app.models.swap  # noqa: F401
+    import app.models.vacation  # noqa: F401
 
     async with _test_engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.drop_all)

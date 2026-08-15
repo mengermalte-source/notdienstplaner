@@ -17,6 +17,7 @@ from app.routers.admin.stats import router as stats_router
 from app.routers.admin.users import router as users_router
 from app.deps import require_admin
 from app.models.user import User
+from app.models.vacation import VacationPeriod  # noqa: F401
 
 
 @asynccontextmanager
