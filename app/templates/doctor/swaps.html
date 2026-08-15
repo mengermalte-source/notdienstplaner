@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Tauschbörse{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Tauschbörse</h1>
+
+{% if my_shifts %}
+<div class="bg-white rounded-lg shadow mb-6 px-5 py-5">
+  <h2 class="text-base font-semibold mb-4">Tausch anfragen</h2>
+  <form method="post" action="/me/swaps/request" class="space-y-5">
+
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+          1 — Welchen meiner Dienste möchte ich tauschen?
+        </label>
+        <select name="my_date" required
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-sm">
+          {% for shift in my_shifts %}
+          <option value="{{ shift.date.isoformat() }}">
+            {{ ['Mo','Di','Mi','Do','Fr','Sa','So'][shift.date.weekday()] }},
+            {{ shift.date.strftime('%d.%m.%Y') }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+          2 — Wen möchte ich anfragen?
+        </label>
+        <select name="target_id" required
+                hx-get="/me/swaps/doctor-shifts"
+                hx-trigger="change"
+                hx-target="#their-shifts"
+                hx-include="[name='target_id']"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-sm">
+          <option value="">Arzt auswählen …</option>
+          {% for uid, u in users.items() %}
+          {% if uid != user.id and u.role.value == 'doctor' %}
+          <option value="{{ uid }}">{{ u.full_name }}</option>
+          {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+          3 — Welchen Dienst soll er/sie übernehmen?
+        </label>
+        <div id="their-shifts"
+             class="border border-gray-200 rounded-lg p-3 min-h-[52px] bg-gray-50">
+          <p class="text-sm text-gray-400 italic">Zuerst einen Arzt auswählen.</p>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+          Nachricht (optional)
+        </label>
+        <input type="text" name="message" placeholder="z.B. Urlaub, Fortbildung …"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+      </div>
+
+      <button type="submit"
+              class="bg-accent-500 text-white px-6 py-2 rounded-lg hover:bg-accent-700 text-sm font-medium">
+        Tauschanfrage senden
+      </button>
+  </form>
+</div>
+{% endif %}
+
+<div class="space-y-3">
+  {% for swap in swaps %}
+  <div class="bg-white border rounded-lg p-4">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0 flex-1">
+        {% if swap.is_coverage_request %}
+        <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
+          <span class="text-xs font-semibold uppercase tracking-wide text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">Vertretung</span>
+          <span class="font-medium text-gray-900">{{ users[swap.requester_id].full_name if swap.requester_id in users else '?' }}</span>
+          <span class="text-gray-400">fällt aus am</span>
+          <span class="font-mono text-gray-800">{{ swap.requester_shift_date.strftime('%d.%m.%Y') }}</span>
+        </div>
+        {% else %}
+        <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
+          <span class="font-medium text-gray-900">{{ users[swap.requester_id].full_name if swap.requester_id in users else '?' }}</span>
+          <span class="text-gray-400">möchte tauschen</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-sm">
+          <span class="font-mono text-gray-800">{{ swap.requester_shift_date.strftime('%d.%m.%Y') }}</span>
+          <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+          </svg>
+          <span class="font-mono text-gray-800">{{ swap.target_shift_date.strftime('%d.%m.%Y') }}</span>
+          <span class="text-gray-400">mit</span>
+          <span class="font-medium text-gray-900">{{ users[swap.target_id].full_name if swap.target_id in users else '?' }}</span>
+        </div>
+        {% endif %}
+        {% if swap.message %}
+        <p class="text-sm text-gray-500 mt-1">{{ swap.message }}</p>
+        {% endif %}
+        {% if swap.target_id == user.id and swap.status == 'pending' %}
+        <form method="post" action="/me/swaps/{{ swap.id }}/accept" class="mt-2">
+          <button class="text-sm bg-accent-500 text-white px-4 py-1.5 rounded-lg hover:bg-accent-700">
+            Akzeptieren
+          </button>
+        </form>
+        {% endif %}
+      </div>
+      <span class="flex-shrink-0 text-xs px-2 py-1 rounded-full
+        {% if swap.status == 'admin_approved' %}bg-green-100 text-green-700
+        {% elif swap.status == 'accepted' %}bg-primary-100 text-primary-700
+        {% elif swap.status == 'rejected' %}bg-red-100 text-red-700
+        {% else %}bg-yellow-100 text-yellow-700{% endif %}">
+        {% if swap.status == 'admin_approved' %}Abgeschlossen
+        {% elif swap.status == 'rejected' %}Abgelehnt
+        {% else %}Ausstehend{% endif %}
+      </span>
+    </div>
+  </div>
+  {% endfor %}
+  {% if not swaps %}
+  <p class="text-center text-gray-400 py-8">Noch keine Tauschanfragen.</p>
+  {% endif %}
+</div>
+{% endblock %}

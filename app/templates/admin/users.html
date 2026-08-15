@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Benutzerverwaltung{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Benutzerverwaltung</h1>
+
+<details class="bg-white rounded-lg shadow mb-6">
+  <summary class="px-5 py-4 cursor-pointer font-medium select-none">+ Neuer Benutzer</summary>
+  <form method="post" action="/admin/users/create" class="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div class="sm:col-span-2">
+      <label class="block text-sm font-medium mb-1">Name</label>
+      <input type="text" name="full_name" required class="w-full border rounded-lg px-3 py-2">
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1">E-Mail</label>
+      <input type="email" name="email" required class="w-full border rounded-lg px-3 py-2">
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1">Passwort</label>
+      <input type="password" name="password" required class="w-full border rounded-lg px-3 py-2">
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1">Rolle</label>
+      <select name="role" class="w-full border rounded-lg px-3 py-2 bg-white">
+        <option value="doctor">Arzt</option>
+        <option value="admin">Administrator</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1">Teilzeit-Faktor (0.1–1.0)</label>
+      <input type="number" name="part_time_factor" value="1.0" min="0.1" max="1.0" step="0.1"
+        class="w-full border rounded-lg px-3 py-2">
+    </div>
+    <div class="sm:col-span-2">
+      <button type="submit" class="bg-accent-500 text-white px-6 py-2 rounded-lg hover:bg-accent-700">
+        Erstellen
+      </button>
+    </div>
+  </form>
+</details>
+
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm min-w-[560px]">
+      <thead class="bg-gray-50 border-b">
+        <tr>
+          <th class="px-4 py-3 text-left">Name</th>
+          <th class="px-4 py-3 text-left">E-Mail</th>
+          <th class="px-4 py-3 text-left">Rolle</th>
+          <th class="px-4 py-3 text-right">Anrechnung</th>
+          <th class="px-4 py-3 text-center">Status</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for user in users %}
+        {% set profile = profiles.get(user.id) %}
+        <tr class="hover:bg-gray-50 {% if not user.is_active %}opacity-50{% endif %}">
+          <td class="px-4 py-3 font-medium">{{ user.full_name }}</td>
+          <td class="px-4 py-3 text-gray-500 text-xs">{{ user.email }}</td>
+          <td class="px-4 py-3">
+            <span class="text-xs px-2 py-0.5 rounded
+              {% if user.role == 'admin' %}bg-purple-100 text-purple-700{% else %}bg-sky-100 text-sky-700{% endif %}">
+              {{ 'Admin' if user.role == 'admin' else 'Arzt' }}
+            </span>
+          </td>
+          <td class="px-4 py-3 text-right text-gray-500">
+            {% if profile %}{{ "%.0f"|format(profile.credit_factor * 100) }}%{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-center">
+            {% if user.is_active %}<span class="text-green-600 text-xs">Aktiv</span>
+            {% else %}<span class="text-red-500 text-xs">Inaktiv</span>{% endif %}
+          </td>
+          <td class="px-4 py-3 flex gap-2 items-center">
+            <form method="post" action="/admin/users/{{ user.id }}/toggle-active">
+              <button class="text-xs border rounded px-2 py-1 hover:bg-gray-100">
+                {{ 'Deaktivieren' if user.is_active else 'Aktivieren' }}
+              </button>
+            </form>
+            {% if user.role.value == 'doctor' %}
+            <button type="button"
+                    onclick="document.getElementById('edit-{{ user.id }}').classList.toggle('hidden')"
+                    class="text-xs border rounded px-2 py-1 hover:bg-gray-100 text-primary-500 border-primary-300">
+              Bearbeiten
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+        {% if user.role.value == 'doctor' %}
+        <tr id="edit-{{ user.id }}" class="hidden bg-gray-50">
+          <td colspan="6" class="px-4 py-4">
+            <form method="post" action="/admin/users/{{ user.id }}/update-profile"
+                  class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+              <!-- Anrechnungsfaktor -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Anrechnungsfaktor</label>
+                <select name="credit_factor" class="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white">
+                  {% for val, label in [("1.0","100 %"),("0.75","75 %"),("0.5","50 %"),("0.25","25 %"),("0.0","0 % (keine Dienste)")] %}
+                  <option value="{{ val }}"
+                    {% if profile and profile.credit_factor == val|float %}selected{% elif not profile and val == "1.0" %}selected{% endif %}>
+                    {{ label }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <!-- Gewünschte Dienste -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Gewünschte Dienste (leer = Minimum)</label>
+                <input type="number" name="desired_shifts_raw" min="0" max="60"
+                       value="{{ profile.desired_shifts if profile and profile.desired_shifts is not none else '' }}"
+                       placeholder="Leer = Minimum"
+                       class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+              </div>
+
+              <!-- Tagespräferenz -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Tagespräferenz</label>
+                <select name="day_preference_raw" class="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white">
+                  <option value="alle"
+                    {% if not profile or profile.day_preference.value == "alle" %}selected{% endif %}>
+                    Alle Tage
+                  </option>
+                  <option value="mittwoch"
+                    {% if profile and profile.day_preference.value == "mittwoch" %}selected{% endif %}>
+                    Nur Mittwoch
+                  </option>
+                  <option value="freitag"
+                    {% if profile and profile.day_preference.value == "freitag" %}selected{% endif %}>
+                    Nur Freitag
+                  </option>
+                </select>
+              </div>
+
+              <!-- Telefon -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Telefon</label>
+                <input type="text" name="phone"
+                       value="{{ profile.phone if profile else '' }}"
+                       class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+              </div>
+
+              <!-- Notizen -->
+              <div class="sm:col-span-2 lg:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Notizen</label>
+                <input type="text" name="notes"
+                       value="{{ profile.notes if profile else '' }}"
+                       class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+              </div>
+
+              <!-- Teilzeit-Faktor (Legacy, versteckt, bleibt synchron mit Anrechnungsfaktor) -->
+              <input type="hidden" name="part_time_factor"
+                     value="{{ profile.credit_factor if profile else '1.0' }}">
+
+              <div class="sm:col-span-2 lg:col-span-3 flex gap-3 items-center">
+                <button type="submit"
+                        class="bg-accent-500 text-white px-4 py-2 rounded text-sm hover:bg-accent-700">
+                  Speichern
+                </button>
+                <button type="button"
+                        onclick="document.getElementById('edit-{{ user.id }}').classList.add('hidden')"
+                        class="border rounded px-4 py-2 text-sm hover:bg-gray-100">
+                  Abbrechen
+                </button>
+              </div>
+            </form>
+          </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

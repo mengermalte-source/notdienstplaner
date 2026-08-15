@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Statistiken{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Fairness-Statistiken</h1>
+
+<form method="get" class="mb-6 flex flex-wrap gap-2">
+  <select name="period_id" class="flex-1 min-w-0 border rounded-lg px-3 py-2 bg-white">
+    {% for p in periods %}
+    <option value="{{ p.id }}" {% if selected and p.id == selected.id %}selected{% endif %}>
+      {{ p.name }}
+    </option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="bg-gray-100 border rounded-lg px-4 py-2 hover:bg-gray-200 flex-shrink-0">Anzeigen</button>
+</form>
+
+{% if selected and doctors %}
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm min-w-[520px]">
+      <thead class="bg-gray-50 border-b">
+        <tr>
+          <th class="px-4 py-3 text-left">Arzt</th>
+          <th class="px-4 py-3 text-right">
+            <span class="inline-flex items-center justify-end gap-1">
+              Dienste
+              <span class="relative group">
+                <span class="text-[10px] text-gray-400 border border-gray-300 rounded-full px-1 cursor-help leading-none">?</span>
+                <span class="absolute bottom-full right-0 mb-1.5 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1.5 w-44 text-left z-10 font-normal">Anzahl der zugewiesenen Dienste in dieser Periode</span>
+              </span>
+            </span>
+          </th>
+          <th class="px-4 py-3 text-right hidden sm:table-cell">
+            <span class="inline-flex items-center justify-end gap-1">
+              Gew. Score
+              <span class="relative group">
+                <span class="text-[10px] text-gray-400 border border-gray-300 rounded-full px-1 cursor-help leading-none">?</span>
+                <span class="absolute bottom-full right-0 mb-1.5 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1.5 w-52 text-left z-10 font-normal">Gewichteter Score: Mi/Sa/So/FT zählen doppelt, Fr einfach. Basis für Fairness-Vergleich</span>
+              </span>
+            </span>
+          </th>
+          <th class="px-4 py-3 text-right">
+            <span class="inline-flex items-center justify-end gap-1">
+              Anrechnung
+              <span class="relative group">
+                <span class="text-[10px] text-gray-400 border border-gray-300 rounded-full px-1 cursor-help leading-none">?</span>
+                <span class="absolute bottom-full right-0 mb-1.5 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1.5 w-48 text-left z-10 font-normal">Anrechnungsfaktor: bestimmt den proportionalen Anteil an der Solldienstlast</span>
+              </span>
+            </span>
+          </th>
+          <th class="px-4 py-3 text-right hidden sm:table-cell">
+            <span class="inline-flex items-center justify-end gap-1">
+              Übertrag
+              <span class="relative group">
+                <span class="text-[10px] text-gray-400 border border-gray-300 rounded-full px-1 cursor-help leading-none">?</span>
+                <span class="absolute bottom-full right-0 mb-1.5 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1.5 w-52 text-left z-10 font-normal">Mehr- oder Minderbelastung aus dieser Periode, die in die nächste Planung einfließt</span>
+              </span>
+            </span>
+          </th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% set max_score = scores.values() | max if scores else 1 %}
+        {% for doc in doctors | sort(attribute='full_name') %}
+        {% set score = scores.get(doc.id, 0) %}
+        {% set count = duty_counts.get(doc.id, 0) %}
+        {% set profile = profiles.get(doc.id) %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3 font-medium">{{ doc.full_name }}</td>
+          <td class="px-4 py-3 text-right tabular-nums">{{ count }}</td>
+          <td class="px-4 py-3 hidden sm:table-cell">
+            <div class="flex items-center justify-end gap-2">
+              <div class="w-20 bg-gray-200 rounded-full h-1.5 flex-shrink-0">
+                <div class="bg-primary-500 h-1.5 rounded-full"
+                     style="width: {{ [(score / max_score * 100)|int, 100]|min }}%"></div>
+              </div>
+              <span class="tabular-nums w-10 text-right text-sm">{{ "%.1f"|format(score) }}</span>
+            </div>
+          </td>
+          <td class="px-4 py-3 text-right text-gray-500 tabular-nums">
+            {{ "%.0f"|format((profile.credit_factor if profile else 1.0) * 100) }}%
+          </td>
+          <td class="px-4 py-3 text-right text-gray-500 tabular-nums hidden sm:table-cell">
+            {{ "%.1f"|format(profile.carried_over_score if profile else 0) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% elif not periods %}
+<p class="text-center text-gray-400 py-12">Noch keine Planungsperioden vorhanden.</p>
+{% endif %}
+
+{% if holiday_history %}
+<section class="mt-8">
+  <h2 class="text-lg font-semibold text-gray-800 mb-4">Feiertagsdienste (Verlauf)</h2>
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm min-w-[480px]">
+        <thead class="bg-gray-50 border-b">
+          <tr>
+            <th class="px-4 py-3 text-left">Arzt</th>
+            <th class="px-4 py-3 text-center">Weihnachten</th>
+            <th class="px-4 py-3 text-center">Silvester/Neujahr</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y">
+          {% for row in holiday_history %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 font-medium">{{ row.name }}</td>
+            {% for key in ["weihnachten","silvester"] %}
+            <td class="px-4 py-3 text-center">
+              {% if row[key] %}<span class="text-red-600 font-semibold">✓</span>{% else %}<span class="text-gray-300">–</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

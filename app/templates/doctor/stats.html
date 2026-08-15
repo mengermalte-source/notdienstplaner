@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Meine Statistiken{% endblock %}
+{% block content %}
+
+<div class="mb-6">
+  <h1 class="text-2xl font-bold">Meine Statistiken</h1>
+  <p class="text-sm text-gray-500 mt-1">Übersicht über deine Dienste und Fairness-Score</p>
+</div>
+
+<!-- Summary cards -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+  <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+    <p class="text-3xl font-bold text-primary-500">{{ total_count }}</p>
+    <p class="text-xs text-gray-500 mt-1">Dienste gesamt</p>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+    <p class="text-3xl font-bold text-accent-500">{{ total_score }}</p>
+    <p class="text-xs text-gray-500 mt-1">Fairness-Score</p>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+    <p class="text-3xl font-bold {% if carryover > 0 %}text-amber-500{% elif carryover < 0 %}text-green-600{% else %}text-gray-400{% endif %}">
+      {% if carryover > 0 %}+{% endif %}{{ carryover }}
+    </p>
+    <p class="text-xs text-gray-500 mt-1">Übertrag</p>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
+    <p class="text-3xl font-bold text-gray-700">{{ peer_rank }}/{{ peer_count }}</p>
+    <p class="text-xs text-gray-500 mt-1">Rang (Score)</p>
+  </div>
+</div>
+
+<!-- Explanation of carryover -->
+{% if carryover != 0 %}
+<div class="bg-primary-50 border border-primary-200 rounded-xl p-4 mb-6 text-sm text-primary-800">
+  {% if carryover > 0 %}
+  Du hast in vergangenen Perioden etwas mehr Dienste als dein fairer Anteil geleistet. Der Übertrag von <strong>+{{ carryover }}</strong> wird beim nächsten Plan automatisch berücksichtigt — du bekommst dann weniger Dienste zugeteilt.
+  {% else %}
+  Du hast in vergangenen Perioden etwas weniger Dienste als dein fairer Anteil geleistet. Der Übertrag von <strong>{{ carryover }}</strong> wird beim nächsten Plan automatisch berücksichtigt — du bekommst dann etwas mehr Dienste zugeteilt.
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Per-period breakdown -->
+<h2 class="text-base font-semibold text-gray-700 mb-3">Aufschlüsselung nach Planungsperioden</h2>
+
+{% if per_period %}
+<div class="space-y-3">
+  {% for pp in per_period %}
+  {% if pp.period %}
+  <div class="bg-white rounded-xl border border-gray-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+    <div class="flex-1 min-w-0">
+      <p class="font-medium text-gray-900">{{ pp.period.name }}</p>
+      <p class="text-xs text-gray-500 mt-0.5">
+        {{ pp.period.start_date.strftime('%d.%m.%Y') }} – {{ pp.period.end_date.strftime('%d.%m.%Y') }}
+      </p>
+    </div>
+    <div class="flex gap-4 text-center flex-shrink-0">
+      <div>
+        <p class="text-xl font-bold text-primary-500">{{ pp.count }}</p>
+        <p class="text-xs text-gray-500">Dienste</p>
+      </div>
+      <div>
+        <p class="text-xl font-bold text-accent-500">{{ "%.1f"|format(pp.score) }}</p>
+        <p class="text-xs text-gray-500">Score</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
+</div>
+{% else %}
+<div class="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center text-gray-400 text-sm">
+  Noch keine Dienste vorhanden.
+</div>
+{% endif %}
+
+{% endblock %}

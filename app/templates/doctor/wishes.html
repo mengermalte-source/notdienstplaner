@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Meine Wünsche{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Verfügbarkeit eintragen</h1>
+
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-gray-800 mb-3">Urlaubszeiträume</h2>
+  <form method="post" action="/me/vacations" class="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="flex flex-wrap gap-3 items-end">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Von</label>
+        <input type="date" name="start_date" required class="border border-gray-300 rounded px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Bis</label>
+        <input type="date" name="end_date" required class="border border-gray-300 rounded px-3 py-2 text-sm">
+      </div>
+      <div class="flex-1 min-w-32">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Grund (optional)</label>
+        <input type="text" name="reason" maxlength="120" class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+      </div>
+      <button type="submit" class="bg-accent-500 text-white px-4 py-2 rounded text-sm font-medium hover:bg-accent-700">
+        Urlaub eintragen
+      </button>
+    </div>
+  </form>
+
+  {% if vacations %}
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-3 py-2 text-left">Von</th>
+        <th class="px-3 py-2 text-left">Bis</th>
+        <th class="px-3 py-2 text-left">Grund</th>
+        <th class="px-3 py-2"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in vacations %}
+      <tr class="border-t border-gray-100">
+        <td class="px-3 py-2">{{ v.start_date.strftime("%d.%m.%Y") }}</td>
+        <td class="px-3 py-2">{{ v.end_date.strftime("%d.%m.%Y") }}</td>
+        <td class="px-3 py-2 text-gray-600">{{ v.reason or "—" }}</td>
+        <td class="px-3 py-2 text-right">
+          <form method="post" action="/me/vacations/{{ v.id }}/delete">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="text-red-500 hover:text-red-700 text-xs">Löschen</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-gray-500 text-sm">Noch keine Urlaubszeiträume eingetragen.</p>
+  {% endif %}
+</section>
+
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-gray-800 mb-3">Tagespräferenz</h2>
+  <div class="bg-white rounded-xl border border-gray-200 p-4">
+    <p class="text-sm text-gray-600 mb-3">Möchtest du grundsätzlich nur an bestimmten Wochentagen eingeplant werden?</p>
+    <form method="post" action="/me/day-preference" class="flex flex-wrap gap-3">
+      {% set pref = profile.day_preference.value if profile and profile.day_preference else 'alle' %}
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="radio" name="day_preference" value="alle" {% if pref == 'alle' %}checked{% endif %}
+               class="accent-blue-600">
+        <span class="text-sm">Alle Tage</span>
+      </label>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="radio" name="day_preference" value="mittwoch" {% if pref == 'mittwoch' %}checked{% endif %}
+               class="accent-blue-600">
+        <span class="text-sm">Nur Mittwoch</span>
+      </label>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="radio" name="day_preference" value="freitag" {% if pref == 'freitag' %}checked{% endif %}
+               class="accent-blue-600">
+        <span class="text-sm">Nur Freitag</span>
+      </label>
+      <button type="submit"
+              class="ml-2 bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">
+        Speichern
+      </button>
+    </form>
+  </div>
+</section>
+
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-gray-800 mb-3">Gewünschte Dienstanzahl</h2>
+  <div class="bg-white rounded-xl border border-gray-200 p-4">
+    <p class="text-sm text-gray-600 mb-3">
+      Wie viele Dienste möchtest du pro 6-Monats-Periode übernehmen?
+      Leer lassen, damit der Algorithmus die Anzahl proportional zu deinem Stellenumfang berechnet.
+    </p>
+    <form method="post" action="/me/desired-shifts" class="flex flex-wrap items-end gap-3">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Anzahl Dienste</label>
+        <input type="number" name="desired_shifts_raw" min="0" max="60"
+               value="{{ profile.desired_shifts if profile and profile.desired_shifts is not none else '' }}"
+               placeholder="Leer = Minimum (proportional)"
+               class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-primary-500">
+      </div>
+      <button type="submit"
+              class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+        Speichern
+      </button>
+    </form>
+    {% if profile and profile.desired_shifts is not none %}
+    <p class="text-xs text-gray-500 mt-2">Aktuell: <strong>{{ profile.desired_shifts }} Dienste</strong> pro Periode gewünscht.</p>
+    {% else %}
+    <p class="text-xs text-gray-500 mt-2">Aktuell: proportional (kein fester Wunsch).</p>
+    {% endif %}
+  </div>
+</section>
+
+<section>
+  <h2 class="text-lg font-semibold text-gray-800 mb-3">Einzelne Verfügbarkeiten</h2>
+
+  <form method="post" action="/me/wishes" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Datum</label>
+        <input type="date" name="date" required
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Verfügbarkeit</label>
+        <select name="kind" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
+          <option value="cannot">Kann nicht (Pflichttermin, privater Grund)</option>
+          <option value="prefer_not">Lieber nicht</option>
+          <option value="prefer">Möchte gerne</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Grund (optional)</label>
+        <input type="text" name="reason" placeholder="z.B. Familienfeier, Fortbildung"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+      </div>
+    </div>
+    <button type="submit"
+      class="bg-accent-500 text-white px-5 py-2 rounded-lg hover:bg-accent-700 transition-colors text-sm font-medium">
+      Eintragen
+    </button>
+  </form>
+
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm min-w-[360px]">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-200">
+            <th class="px-4 py-3 text-left font-medium text-gray-600">Datum</th>
+            <th class="px-4 py-3 text-left font-medium text-gray-600">Verfügbarkeit</th>
+            <th class="px-4 py-3 text-left font-medium text-gray-600 hidden sm:table-cell">Grund</th>
+            <th class="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for wish in wishes %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 font-mono font-medium text-gray-800">{{ wish.date.strftime('%d.%m.%Y') }}</td>
+            <td class="px-4 py-3">
+              {% if wish.wish_type == 'negative' and wish.priority == 'hard' %}
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Kann nicht
+              </span>
+              {% elif wish.wish_type == 'negative' %}
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>Lieber nicht
+              </span>
+              {% else %}
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Möchte gerne
+              </span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-gray-500 hidden sm:table-cell">{{ wish.reason or '—' }}</td>
+            <td class="px-4 py-3 text-right">
+              <form method="post" action="/me/wishes/{{ wish.id }}/delete">
+                <button class="text-gray-400 hover:text-red-500 transition-colors text-xs">Löschen</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+          {% if not wishes %}
+          <tr>
+            <td colspan="4" class="px-4 py-10 text-center text-gray-400">
+              Noch keine Einträge. Trage deine Verfügbarkeit oben ein.
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="mt-4 p-4 bg-primary-50 rounded-lg border border-primary-100 text-sm text-primary-700">
+    <p class="font-medium mb-1">Hinweis zum Algorithmus:</p>
+    <ul class="space-y-0.5 text-primary-500">
+      <li><strong>Kann nicht</strong> — dieser Tag wird dir garantiert nicht zugeteilt</li>
+      <li><strong>Lieber nicht</strong> — der Algorithmus versucht es zu vermeiden, kann aber im Notfall abweichen</li>
+      <li><strong>Möchte gerne</strong> — dieser Tag wird bevorzugt berücksichtigt</li>
+    </ul>
+  </div>
+</section>
+{% endblock %}
