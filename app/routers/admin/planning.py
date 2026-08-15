@@ -16,6 +16,7 @@ from app.config import settings
 from app.database import get_session
 from app.deps import require_admin
 from app.models.schedule import PlanStatus, PlanningPeriod, ShiftAssignment
+from app.models.holiday_carryover import HolidayDutyCarryover
 from app.models.special_day import SpecialDay, SpecialDayCategory
 from app.models.user import DoctorProfile, User, UserRole
 from app.models.wish import WishEntry, WishPriority, WishType
@@ -26,6 +27,56 @@ from app.services.fairness import compute_fairness_score, compute_target_duties
 
 router = APIRouter(prefix="/admin/planning", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates")
+
+
+def _get_key_holiday_dates(year: int) -> dict[str, set[date_type]]:
+    """Gibt die Datumsets für Weihnachten, Silvester/Neujahr, Ostern, Pfingsten zurück."""
+    from datetime import timedelta
+    import holidays as hol
+    bavarian = hol.Germany(state="BY", years=year)
+
+    # Ostermontag und Pfingstmontag sind gesetzliche Feiertage; Sonntag = Montag - 1 Tag
+    easter_monday = next(
+        (d for d, name in bavarian.items()
+         if "Ostermontag" in name or "Easter Monday" in name),
+        None,
+    )
+    pentecost_monday = next(
+        (d for d, name in bavarian.items()
+         if "Pfingstmontag" in name or "Whit Monday" in name),
+        None,
+    )
+    # Fallback: library could list Ostersonntag / Pfingstsonntag directly
+    easter_sunday = next(
+        (d for d, name in bavarian.items()
+         if "Ostersonntag" in name or "Easter Sunday" in name),
+        easter_monday - timedelta(days=1) if easter_monday else None,
+    )
+    pentecost_sunday = next(
+        (d for d, name in bavarian.items()
+         if "Pfingstsonntag" in name or "Whit Sunday" in name),
+        pentecost_monday - timedelta(days=1) if pentecost_monday else None,
+    )
+
+    result: dict[str, set] = {
+        "weihnachten": {date_type(year, 12, 24), date_type(year, 12, 25), date_type(year, 12, 26)},
+        "silvester": {date_type(year, 12, 31), date_type(year + 1, 1, 1)},
+        "ostern": set(),
+        "pfingsten": set(),
+    }
+    if easter_sunday:
+        result["ostern"] = {
+            easter_sunday - timedelta(days=1),
+            easter_sunday,
+            easter_sunday + timedelta(days=1),
+        }
+    if pentecost_sunday:
+        result["pfingsten"] = {
+            pentecost_sunday - timedelta(days=1),
+            pentecost_sunday,
+            pentecost_sunday + timedelta(days=1),
+        }
+    return result
 
 _MONTH_NAMES = [
     "Januar", "Februar", "März", "April", "Mai", "Juni",
@@ -208,7 +259,24 @@ async def run_algorithm(
 
     all_wishes = list(wishes) + vac_wishes
 
-    assignments = solve_schedule(doctor_objs, days, all_wishes, holiday_dates)
+    # Feiertagsübertrag aus früheren Perioden laden
+    all_carryovers = (await session.exec(
+        select(HolidayDutyCarryover).where(
+            HolidayDutyCarryover.planning_period_id != period_id
+        )
+    )).all()
+    penalty_map: dict[int, set[str]] = defaultdict(set)
+    for c in all_carryovers:
+        if c.worked:
+            penalty_map[c.user_id].add(c.holiday_key)
+
+    key_holiday_dates_for_period = _get_key_holiday_dates(period.year)
+
+    assignments = solve_schedule(
+        doctor_objs, days, all_wishes, holiday_dates,
+        holiday_carryover_penalty=dict(penalty_map),
+        key_holiday_dates=key_holiday_dates_for_period,
+    )
 
     if assignments is None:
         periods = (await session.exec(
@@ -626,6 +694,21 @@ async def publish_period(period_id: int, session: AsyncSession = Depends(get_ses
                 profile.carried_over_score + (actual_scores.get(u.id, 0.0) - fair_share), 3
             )
             session.add(profile)
+
+        # Feiertagshistorie speichern
+        key_holidays = _get_key_holiday_dates(period.year)
+        for key, date_set in key_holidays.items():
+            for u in doctors_raw:
+                worked = any(
+                    a.user_id == u.id and a.date in date_set and not a.is_substitute
+                    for a in all_assignments
+                )
+                session.add(HolidayDutyCarryover(
+                    user_id=u.id,
+                    planning_period_id=period_id,
+                    holiday_key=key,
+                    worked=worked,
+                ))
 
     await session.commit()
     return RedirectResponse(f"/admin/planning/{period_id}", status_code=302)

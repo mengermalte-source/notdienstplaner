@@ -60,6 +60,8 @@ def solve_schedule(
     holiday_dates: set,
     time_limit_seconds: int = 30,
     min_free_weekends_between: int = 2,
+    holiday_carryover_penalty: dict | None = None,
+    key_holiday_dates: dict | None = None,
 ) -> list[tuple[int, date]] | None:
 
     if not doctors or not days:
@@ -131,6 +133,20 @@ def solve_schedule(
                      for i in range(n_days)}
 
     fairness_penalties = []
+
+    # Feiertagswiederholer-Strafterm: wer letztes Mal an einem Schlüsselfeiertag Dienst hatte,
+    # bekommt einen Soft-Malus für dieselben Feiertage in dieser Periode
+    if holiday_carryover_penalty and key_holiday_dates:
+        key_holiday_dates_in_period: dict[str, list[int]] = {}
+        for key, date_set in key_holiday_dates.items():
+            key_holiday_dates_in_period[key] = [day_idx[d] for d in date_set if d in day_idx]
+        for doc in doctors:
+            worked_keys = holiday_carryover_penalty.get(doc.id, set())
+            for key, indices in key_holiday_dates_in_period.items():
+                if key in worked_keys:
+                    for i in indices:
+                        fairness_penalties.append(x[doc.id, i] * 200)
+
     for doc in doctors:
         weighted_sum = sum(x[doc.id, i] * weight_by_day[i] for i in range(n_days))
         target_scaled = int(targets[doc.id] * 100)
