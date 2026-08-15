@@ -1,9 +1,6 @@
-from datetime import date, timedelta
+from datetime import date
 from ortools.sat.python import cp_model
 
-
-def _monday_of_week(d: date) -> date:
-    return d - timedelta(days=d.weekday())
 
 
 def get_day_coverage(d: date, holiday_dates: set) -> int:
@@ -59,7 +56,6 @@ def solve_schedule(
     wishes: list,
     holiday_dates: set,
     time_limit_seconds: int = 30,
-    min_free_weekends_between: int = 2,
     holiday_carryover_penalty: dict | None = None,
     key_holiday_dates: dict | None = None,
 ) -> list[tuple[int, date]] | None:
@@ -94,21 +90,6 @@ def solve_schedule(
                     model.add(x[doc.id, i] == 0)
 
     # Kein Folgedienstverbot mehr (bewusst entfernt)
-
-    # Wochenendabstand: ≥2 freie Wochenenden zwischen Sa/So/FT-Diensten
-    required_week_gap = min_free_weekends_between + 1
-    for doc in doctors:
-        for i in range(n_days):
-            if not (days[i].weekday() >= 5 or days[i] in holiday_dates):
-                continue
-            mon_i = _monday_of_week(days[i])
-            for j in range(i + 1, n_days):
-                if not (days[j].weekday() >= 5 or days[j] in holiday_dates):
-                    continue
-                week_gap = (_monday_of_week(days[j]) - mon_i).days // 7
-                if week_gap >= required_week_gap:
-                    break
-                model.add(x[doc.id, i] + x[doc.id, j] <= 1)
 
     # Targets (zweiphasig: Wunschanzahl + Proportional)
     targets = _compute_targets(doctors, days, holiday_dates)
@@ -192,7 +173,6 @@ def solve_substitute_schedule(
     wishes: list,
     holiday_dates: set,
     time_limit_seconds: int = 30,
-    min_free_weekends_between: int = 1,
 ) -> list[tuple[int, date]] | None:
     """
     Plant 1 Bereitschaftsarzt pro Tag (nur Dez–Apr).
@@ -230,21 +210,6 @@ def solve_substitute_schedule(
             for doc in doctors:
                 if doc.id == wish.user_id:
                     model.add(x[wish.user_id, day_idx[wish.date]] == 0)
-
-    # Schwächerer Wochenendabstand
-    required_week_gap = min_free_weekends_between + 1
-    for doc in doctors:
-        for i in range(n_days):
-            if not (days[i].weekday() >= 5 or days[i] in holiday_dates):
-                continue
-            mon_i = _monday_of_week(days[i])
-            for j in range(i + 1, n_days):
-                if not (days[j].weekday() >= 5 or days[j] in holiday_dates):
-                    continue
-                week_gap = (_monday_of_week(days[j]) - mon_i).days // 7
-                if week_gap >= required_week_gap:
-                    break
-                model.add(x[doc.id, i] + x[doc.id, j] <= 1)
 
     # Fairness-Ziel: proportional zu credit_factor, Basis = sub_carried_over_score
     total_slots = len(days)
