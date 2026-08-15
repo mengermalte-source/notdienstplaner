@@ -1,5 +1,4 @@
 from __future__ import annotations
-from datetime import date as Date
 from typing import Optional
 from sqlmodel import SQLModel, Field
 
