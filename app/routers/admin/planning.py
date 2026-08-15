@@ -388,6 +388,7 @@ async def period_detail(
 @router.get("/{period_id}/calendar", response_class=HTMLResponse)
 async def period_calendar(
     period_id: int, request: Request,
+    month: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_session),
     admin: User = Depends(require_admin),
 ):
@@ -402,12 +403,43 @@ async def period_calendar(
     for a in assignments:
         if a.user_id in users:
             duties_by_date[a.date].append(users[a.user_id])
-    months = _build_months(period.start_date, period.end_date)
+
+    all_months = _build_months(period.start_date, period.end_date)
+
+    sel_year, sel_month = None, None
+    if month:
+        try:
+            sel_year, sel_month = map(int, month.split("-"))
+        except (ValueError, AttributeError):
+            pass
+    if sel_year is None:
+        today = date_type.today()
+        if period.start_date <= today <= period.end_date:
+            sel_year, sel_month = today.year, today.month
+        else:
+            sel_year, sel_month = all_months[0]["year"], all_months[0]["month"]
+
+    current_idx = next(
+        (i for i, mo in enumerate(all_months) if mo["year"] == sel_year and mo["month"] == sel_month),
+        0,
+    )
+    current_month = all_months[current_idx]
+
+    def month_url(idx: int) -> Optional[str]:
+        if 0 <= idx < len(all_months):
+            mo = all_months[idx]
+            return f"/admin/planning/{period_id}/calendar?month={mo['year']}-{mo['month']:02d}"
+        return None
+
     return templates.TemplateResponse("admin/calendar_view.html", {
         "request": request, "user": admin,
-        "period": period, "months": months,
+        "period": period,
+        "month": current_month,
+        "all_months": all_months,
         "duties_by_date": dict(duties_by_date),
         "doctor_colors": _build_doctor_colors(users),
+        "prev_url": month_url(current_idx - 1),
+        "next_url": month_url(current_idx + 1),
     })
 
 
