@@ -167,3 +167,100 @@ def solve_schedule(
         for i in range(n_days)
         if solver.value(x[doc.id, i])
     ]
+
+
+def solve_substitute_schedule(
+    doctors: list,
+    days: list[date],
+    primary_assignments: set[tuple[int, date]],
+    wishes: list,
+    holiday_dates: set,
+    time_limit_seconds: int = 30,
+    min_free_weekends_between: int = 1,
+) -> list[tuple[int, date]] | None:
+    """
+    Plant 1 Bereitschaftsarzt pro Tag (nur Dez–Apr).
+    Bereitschaftsarzt darf an demselben Tag nicht Primärarzt sein.
+    Schwächere Wochenendabstands-Regel (default: 1 freies Wochenende).
+    Eigene Fairness-Berechnung via sub_carried_over_score
+    (erwartet als carried_over_score auf den übergebenen doctor-Objekten).
+    """
+    if not doctors or not days:
+        return None
+
+    model = cp_model.CpModel()
+    n_days = len(days)
+    day_idx = {d: i for i, d in enumerate(days)}
+
+    x = {(doc.id, i): model.new_bool_var(f"sub_{doc.id}_{i}")
+         for doc in doctors for i in range(n_days)}
+
+    # Genau 1 Bereitschaftsarzt pro Tag
+    for i in range(n_days):
+        model.add(sum(x[doc.id, i] for doc in doctors) == 1)
+
+    # Darf nicht bereits Primärarzt an diesem Tag sein
+    for (uid, d) in primary_assignments:
+        if d in day_idx:
+            for doc in doctors:
+                if doc.id == uid:
+                    model.add(x[uid, day_idx[d]] == 0)
+
+    # Harte Ablehnungswünsche
+    for wish in wishes:
+        if (getattr(wish, "wish_type", None) == "negative"
+                and getattr(wish, "priority", None) == "hard"
+                and wish.date in day_idx):
+            for doc in doctors:
+                if doc.id == wish.user_id:
+                    model.add(x[wish.user_id, day_idx[wish.date]] == 0)
+
+    # Schwächerer Wochenendabstand
+    required_week_gap = min_free_weekends_between + 1
+    for doc in doctors:
+        for i in range(n_days):
+            if not (days[i].weekday() >= 5 or days[i] in holiday_dates):
+                continue
+            mon_i = _monday_of_week(days[i])
+            for j in range(i + 1, n_days):
+                if not (days[j].weekday() >= 5 or days[j] in holiday_dates):
+                    continue
+                week_gap = (_monday_of_week(days[j]) - mon_i).days // 7
+                if week_gap >= required_week_gap:
+                    break
+                model.add(x[doc.id, i] + x[doc.id, j] <= 1)
+
+    # Fairness-Ziel: proportional zu credit_factor, Basis = sub_carried_over_score
+    total_slots = len(days)
+    total_credit = sum(doc.credit_factor for doc in doctors) or 1.0
+    sub_targets = {doc.id: (doc.credit_factor / total_credit) * total_slots for doc in doctors}
+
+    fairness_penalties = []
+    weight_by_day = {i: int(get_day_weight(days[i], holiday_dates) * 100) for i in range(n_days)}
+
+    for doc in doctors:
+        weighted_sum = sum(x[doc.id, i] * weight_by_day[i] for i in range(n_days))
+        target_scaled = int(sub_targets[doc.id] * 100)
+        carryover_scaled = int(getattr(doc, "carried_over_score", 0.0) * 100)
+
+        dev = model.new_int_var(-10000, 10000, f"subdev_{doc.id}")
+        model.add(dev == weighted_sum - (target_scaled - carryover_scaled))
+        abs_dev = model.new_int_var(0, 10000, f"subabsdev_{doc.id}")
+        model.add_abs_equality(abs_dev, dev)
+        fairness_penalties.append(abs_dev)
+
+    model.minimize(sum(fairness_penalties) * 10)
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = time_limit_seconds
+    status = solver.solve(model)
+
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return None
+
+    return [
+        (doc.id, days[i])
+        for doc in doctors
+        for i in range(n_days)
+        if solver.value(x[doc.id, i])
+    ]

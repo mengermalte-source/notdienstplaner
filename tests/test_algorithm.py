@@ -135,3 +135,23 @@ def test_fairness_score_uses_day_weight():
     assert scores[1] == pytest.approx(4.0)
     assert scores[2] == pytest.approx(1.0)
     assert scores[1] > scores[2]
+
+
+# ---------------------------------------------------------------------------
+# solve_substitute_schedule tests (Task 5)
+# ---------------------------------------------------------------------------
+
+def test_substitute_not_already_primary():
+    """Bereitschaftsarzt darf an demselben Tag nicht Primärarzt sein."""
+    from app.services.algorithm import solve_substitute_schedule
+    doctors = make_doctors(6)
+    sat = date(2027, 1, 9)
+    # Ärzte 1 und 2 sind Primärärzte an diesem Samstag
+    primary_set = {(1, sat), (2, sat)}
+    result = solve_substitute_schedule(
+        doctors, [sat], primary_set, wishes=[], holiday_dates=set()
+    )
+    assert result is not None
+    sub_on_sat = [(uid, d) for uid, d in result if d == sat]
+    assert len(sub_on_sat) == 1
+    assert sub_on_sat[0][0] not in (1, 2)
