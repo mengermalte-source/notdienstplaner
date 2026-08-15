@@ -177,7 +177,6 @@
           <th class="px-4 py-3 text-left">Arzt</th>
           <th class="px-4 py-3 text-left hidden sm:table-cell">Typ</th>
           <th class="px-4 py-3 text-left hidden sm:table-cell">Gewicht</th>
-          <th class="px-4 py-3 text-left hidden sm:table-cell">Override</th>
         </tr>
       </thead>
       <tbody class="divide-y">
@@ -196,9 +195,6 @@
             {% endif %}
           </td>
           <td class="px-4 py-2 text-gray-500 hidden sm:table-cell">{{ "%.1f"|format(a.weighted_score) }}</td>
-          <td class="px-4 py-2 text-xs text-orange-500 hidden sm:table-cell">
-            {% if a.is_manual_override %}Manuell{% endif %}
-          </td>
         </tr>
         {% endfor %}
       </tbody>
