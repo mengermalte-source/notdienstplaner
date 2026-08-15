@@ -157,6 +157,30 @@ async def create_period(
 
 
 # ---------------------------------------------------------------------------
+# Delete period
+# ---------------------------------------------------------------------------
+
+@router.post("/{period_id}/delete")
+async def delete_period(period_id: int, session: AsyncSession = Depends(get_session)):
+    period = await session.get(PlanningPeriod, period_id)
+    if not period:
+        return RedirectResponse("/admin/planning", status_code=302)
+    assignments = (await session.exec(
+        select(ShiftAssignment).where(ShiftAssignment.planning_period_id == period_id)
+    )).all()
+    for a in assignments:
+        await session.delete(a)
+    carryovers = (await session.exec(
+        select(HolidayDutyCarryover).where(HolidayDutyCarryover.planning_period_id == period_id)
+    )).all()
+    for c in carryovers:
+        await session.delete(c)
+    await session.delete(period)
+    await session.commit()
+    return RedirectResponse("/admin/planning", status_code=302)
+
+
+# ---------------------------------------------------------------------------
 # Run algorithm
 # ---------------------------------------------------------------------------
 
