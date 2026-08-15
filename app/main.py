@@ -182,8 +182,38 @@ async def admin_dashboard(
         select(PlanningPeriod).order_by(PlanningPeriod.start_date.desc())
     )).all()
     published = [p for p in all_periods if p.status == PlanStatus.published]
-    draft_count = sum(1 for p in all_periods if p.status == PlanStatus.draft)
     latest = published[0] if published else None
+
+    # Doctor profiles (used for config checks and fairness)
+    profiles_map = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
+
+    # Config issue detection
+    config_issues: list[str] = []
+    missing_profile = [d for d in doctors if d.id not in profiles_map]
+    if missing_profile:
+        names = ", ".join(d.full_name for d in missing_profile[:2])
+        suffix = f" (+{len(missing_profile) - 2} weitere)" if len(missing_profile) > 2 else ""
+        config_issues.append(f"Kein Profil: {names}{suffix}")
+    can_do_wednesday = sum(
+        1 for d in doctors
+        if d.id not in profiles_map or profiles_map[d.id].day_preference in ("alle", "mittwoch")
+    )
+    can_do_friday = sum(
+        1 for d in doctors
+        if d.id not in profiles_map or profiles_map[d.id].day_preference in ("alle", "freitag")
+    )
+    can_do_weekends = sum(
+        1 for d in doctors
+        if d.id not in profiles_map or profiles_map[d.id].day_preference == "alle"
+    )
+    if doctor_count > 0 and can_do_wednesday == 0:
+        config_issues.append("Kein Arzt für Mittwochsdienste verfügbar")
+    if doctor_count > 0 and can_do_friday == 0:
+        config_issues.append("Kein Arzt für Freitagsdienste verfügbar")
+    if doctor_count > 0 and can_do_weekends < 2:
+        config_issues.append(
+            f"Zu wenig Ärzte für Wochenenddienste ({can_do_weekends} verfügbar, mind. 2 nötig)"
+        )
 
     assignments_count = 0
     acknowledged_count = 0
@@ -198,18 +228,14 @@ async def admin_dashboard(
         assignments_count = len(assignments)
         acknowledged_count = sum(1 for a in assignments if a.acknowledged_at)
 
-        holiday_dates_dash = set()
-
         scores = compute_fairness_score(
             [(a.user_id, a.date) for a in assignments],
-            holiday_dates_dash,
+            set(),
         )
-        profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
         for doc in doctors:
             fairness_rows.append({
                 "name": doc.full_name,
                 "score": round(scores.get(doc.id, 0.0), 1),
-                "factor": profiles[doc.id].part_time_factor if doc.id in profiles else 1.0,
             })
         fairness_rows.sort(key=lambda r: r["score"])
 
@@ -231,7 +257,7 @@ async def admin_dashboard(
     return _templates.TemplateResponse("admin/dashboard.html", {
         "request": request, "user": admin,
         "doctor_count": doctor_count,
-        "draft_count": draft_count,
+        "config_issues": config_issues,
         "latest": latest,
         "assignments_count": assignments_count,
         "acknowledged_count": acknowledged_count,
