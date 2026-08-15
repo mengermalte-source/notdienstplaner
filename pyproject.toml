@@ -20,6 +20,7 @@ dependencies = [
     "aiofiles==24.*",
     "itsdangerous==2.2.*",
     "ortools>=9.10",
+    "holidays>=0.50",
     "icalendar==6.*",
     "weasyprint==63.*",
     "httpx==0.28.*",

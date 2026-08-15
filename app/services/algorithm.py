@@ -4,8 +4,10 @@ from ortools.sat.python import cp_model
 
 
 
-def get_day_coverage(d: date, holiday_dates: set) -> int:
+def get_day_coverage(d: date, holiday_dates: set, special_day_overrides: dict | None = None) -> int:
     """Anzahl benötigter Ärzte für diesen Tag."""
+    if special_day_overrides and d in special_day_overrides:
+        return special_day_overrides[d]
     if d in holiday_dates:
         return 2
     if d.weekday() in (2, 4):  # Mittwoch, Freitag
@@ -24,13 +26,14 @@ def _compute_targets(
     doctors: list,
     days: list[date],
     holiday_dates: set,
+    special_day_overrides: dict | None = None,
 ) -> dict[int, float]:
     """
     Zweiphasige Zielberechnung:
     1. Ärzte mit desired_shifts bekommen ihren Wunschwert als Ziel.
     2. Restslots werden proportional zu credit_factor auf Minimum-Ärzte verteilt.
     """
-    total_slots = sum(get_day_coverage(d, holiday_dates) for d in days)
+    total_slots = sum(get_day_coverage(d, holiday_dates, special_day_overrides) for d in days)
 
     fixed = [doc for doc in doctors if getattr(doc, "desired_shifts", None) is not None]
     flex = [doc for doc in doctors if getattr(doc, "desired_shifts", None) is None]
@@ -60,6 +63,7 @@ def solve_schedule(
     holiday_carryover_penalty: dict | None = None,
     key_holiday_dates: dict | None = None,
     strict_wishes: bool = True,
+    special_day_overrides: dict | None = None,
 ) -> list[tuple[int, date]] | None:
 
     if not doctors or not days:
@@ -72,15 +76,14 @@ def solve_schedule(
     x = {(doc.id, i): model.new_bool_var(f"x_{doc.id}_{i}")
          for doc in doctors for i in range(n_days)}
 
-    # Abdeckung pro Tag (Mi/Fr = 1, Sa/So/FT = 2)
+    # Abdeckung pro Tag (Mi/Fr = 1, Sa/So/FT = 2, ggf. Sondertag-Override)
     for i, day in enumerate(days):
-        req = get_day_coverage(day, holiday_dates)
+        req = get_day_coverage(day, holiday_dates, special_day_overrides)
         model.add(sum(x[doc.id, i] for doc in doctors) == req)
 
     # Tagespräferenz: nur Mittwoch oder nur Freitag
     for doc in doctors:
         pref = getattr(doc, "day_preference", "alle")
-        # Support DayPreference enum or string
         pref_val = pref.value if hasattr(pref, "value") else str(pref)
         if pref_val == "mittwoch":
             for i, day in enumerate(days):
@@ -94,7 +97,7 @@ def solve_schedule(
     # Kein Folgedienstverbot mehr (bewusst entfernt)
 
     # Targets (zweiphasig: Wunschanzahl + Proportional)
-    targets = _compute_targets(doctors, days, holiday_dates)
+    targets = _compute_targets(doctors, days, holiday_dates, special_day_overrides)
 
     # Schranken (in Anzahl Dienste)
     for doc in doctors:
@@ -119,17 +122,14 @@ def solve_schedule(
                 hard_wish_penalties.append(x[wish.user_id, day_idx[wish.date]] * 500)
 
     # Objektiv: Fairness-Abweichung + Wunschboni
-    # Gewicht aus get_day_weight (Mi/Sa/So/FT = 200, Fr = 100 in Ganzzahl)
     weight_by_day = {i: int(get_day_weight(days[i], holiday_dates) * 100)
                      for i in range(n_days)}
 
-    # Ziel-Gewichtspunkte pro Arzt: Anzahl-Ziel × durchschnittliches Tagesgewicht
-    # (konvertiert count-basierte Ziele in gewichtete Punkte für das Objective)
     total_weighted_slots = sum(
-        get_day_weight(days[i], holiday_dates) * get_day_coverage(days[i], holiday_dates)
+        get_day_weight(days[i], holiday_dates) * get_day_coverage(days[i], holiday_dates, special_day_overrides)
         for i in range(n_days)
     )
-    total_slots_count = sum(get_day_coverage(days[i], holiday_dates) for i in range(n_days))
+    total_slots_count = sum(get_day_coverage(days[i], holiday_dates, special_day_overrides) for i in range(n_days))
     avg_weight = total_weighted_slots / total_slots_count if total_slots_count > 0 else 1.0
 
     fairness_penalties = []
@@ -194,6 +194,7 @@ def solve_substitute_schedule(
     wishes: list,
     holiday_dates: set,
     time_limit_seconds: int = 30,
+    special_day_overrides: dict | None = None,
 ) -> list[tuple[int, date]] | None:
     """
     Plant 1 Bereitschaftsarzt pro Tag (nur Dez–Apr).

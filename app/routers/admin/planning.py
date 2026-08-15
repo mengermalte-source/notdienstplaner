@@ -19,6 +19,7 @@ from app.models.schedule import PlanStatus, PlanningPeriod, ShiftAssignment
 from app.models.holiday_carryover import HolidayDutyCarryover
 from app.models.user import DoctorProfile, User, UserRole
 from app.models.wish import WishEntry, WishPriority, WishType
+from app.models.special_day import SpecialDay
 from types import SimpleNamespace
 from app.models.vacation import VacationPeriod
 from app.services.algorithm import solve_schedule, solve_substitute_schedule, get_day_weight, get_day_coverage
@@ -195,6 +196,18 @@ async def run_algorithm(
 
     holiday_dates = _get_holiday_dates(period.start_date, period.end_date)
 
+    # Sondertage mit required_doctors laden (überschreiben Standardabdeckung)
+    special_days_db = (await session.exec(
+        select(SpecialDay).where(
+            SpecialDay.date >= period.start_date,
+            SpecialDay.date <= period.end_date,
+            SpecialDay.required_doctors != None,  # noqa: E711
+        )
+    )).all()
+    special_day_overrides: dict[date_type, int] = {
+        sd.date: sd.required_doctors for sd in special_days_db if sd.required_doctors
+    }
+
     # Urlaubszeiträume laden
     vacation_periods = (await session.exec(
         select(VacationPeriod).where(
@@ -211,14 +224,14 @@ async def run_algorithm(
         )
     )).all()
 
-    # Tagesauswahl: Mi, Fr, Sa, So + Feiertage
+    # Tagesauswahl: Mi, Fr, Sa, So + Feiertage + Sondertage mit required_doctors
     all_days = [
         period.start_date + timedelta(days=i)
         for i in range((period.end_date - period.start_date).days + 1)
     ]
     days = [
         d for d in all_days
-        if d.weekday() in (2, 4, 5, 6) or d in holiday_dates
+        if d.weekday() in (2, 4, 5, 6) or d in holiday_dates or d in special_day_overrides
     ]
 
     if not days:
@@ -280,6 +293,7 @@ async def run_algorithm(
         doctor_objs, days, all_wishes, holiday_dates,
         holiday_carryover_penalty=dict(penalty_map),
         key_holiday_dates=key_holiday_dates_for_period,
+        special_day_overrides=special_day_overrides or None,
     )
     if assignments is None:
         assignments = solve_schedule(
@@ -287,6 +301,7 @@ async def run_algorithm(
             holiday_carryover_penalty=dict(penalty_map),
             key_holiday_dates=key_holiday_dates_for_period,
             strict_wishes=False,
+            special_day_overrides=special_day_overrides or None,
         )
 
     if assignments is None:
@@ -319,7 +334,8 @@ async def run_algorithm(
     ]
     sub_days = [
         d for d in all_days_period
-        if d.month in (12, 1, 2, 3, 4) and (d.weekday() in (2, 4, 5, 6) or d in holiday_dates)
+        if d.month in (12, 1, 2, 3, 4)
+        and (d.weekday() in (2, 4, 5, 6) or d in holiday_dates or d in special_day_overrides)
     ]
     if sub_days:
         primary_set = set(assignments)
@@ -334,7 +350,8 @@ async def run_algorithm(
 
         sub_doctor_objs = [_SubDoc(u, profiles.get(u.id)) for u in doctors]
         sub_assignments = solve_substitute_schedule(
-            sub_doctor_objs, sub_days, primary_set, all_wishes, holiday_dates
+            sub_doctor_objs, sub_days, primary_set, all_wishes, holiday_dates,
+            special_day_overrides=special_day_overrides or None,
         )
         if sub_assignments:
             for user_id, day in sub_assignments:
@@ -371,6 +388,17 @@ async def run_substitute_algorithm(
 
     holiday_dates = _get_holiday_dates(period.start_date, period.end_date)
 
+    special_days_db = (await session.exec(
+        select(SpecialDay).where(
+            SpecialDay.date >= period.start_date,
+            SpecialDay.date <= period.end_date,
+            SpecialDay.required_doctors != None,  # noqa: E711
+        )
+    )).all()
+    special_day_overrides: dict[date_type, int] = {
+        sd.date: sd.required_doctors for sd in special_days_db if sd.required_doctors
+    }
+
     all_days = [
         period.start_date + timedelta(days=i)
         for i in range((period.end_date - period.start_date).days + 1)
@@ -378,7 +406,8 @@ async def run_substitute_algorithm(
     # Nur Dez–Apr, gleiche Tagestypen wie Primärplan
     sub_days = [
         d for d in all_days
-        if d.month in (12, 1, 2, 3, 4) and (d.weekday() in (2, 4, 5, 6) or d in holiday_dates)
+        if d.month in (12, 1, 2, 3, 4)
+        and (d.weekday() in (2, 4, 5, 6) or d in holiday_dates or d in special_day_overrides)
     ]
 
     if not sub_days:
@@ -424,7 +453,8 @@ async def run_substitute_algorithm(
         await session.delete(s)
 
     sub_assignments = solve_substitute_schedule(
-        doctor_objs, sub_days, primary_set, wishes, holiday_dates
+        doctor_objs, sub_days, primary_set, wishes, holiday_dates,
+        special_day_overrides=special_day_overrides or None,
     )
 
     if sub_assignments is None:
