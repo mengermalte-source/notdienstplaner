@@ -108,7 +108,7 @@ async def planning_page(request: Request, session: AsyncSession = Depends(get_se
         "request": request, "user": admin,
         "period": None, "assignments": [], "users": {}, "doctors": [],
         "scores": {}, "periods": [], "error": None,
-        "qa_passed": None, "qa_total": None, "fairness_rows": [], "show_list": False,
+        "qa_passed": None, "qa_total": None, "fairness_rows": [], "show_list": False, "show_fairness": False,
         "month": None, "all_months": [], "duties_by_date": {},
         "doctor_colors": {}, "prev_url": None, "next_url": None,
     })
@@ -578,6 +578,7 @@ async def period_detail(
         "qa_total": qa_total,
         "fairness_rows": fairness_rows,
         "show_list": (view == "list"),
+        "show_fairness": (view == "fairness"),
         "month": current_month_data,
         "all_months": all_months,
         "duties_by_date": dict(duties_by_date),
