@@ -18,6 +18,7 @@ from app.routers.admin.users import router as users_router
 from app.deps import require_admin
 from app.models.user import User
 from app.models.vacation import VacationPeriod  # noqa: F401
+from app.models.holiday_carryover import HolidayDutyCarryover  # noqa: F401
 
 
 @asynccontextmanager
