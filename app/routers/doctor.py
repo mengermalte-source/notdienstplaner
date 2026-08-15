@@ -29,8 +29,12 @@ async def dashboard(request: Request, user: User = Depends(get_current_user),
         select(WishEntry).where(WishEntry.user_id == user.id)
         .order_by(WishEntry.date))).all()
     assignments = (await session.exec(
-        select(ShiftAssignment).where(ShiftAssignment.user_id == user.id)
-        .order_by(ShiftAssignment.date))).all()
+        select(ShiftAssignment)
+        .join(PlanningPeriod, ShiftAssignment.planning_period_id == PlanningPeriod.id)
+        .where(ShiftAssignment.user_id == user.id,
+               PlanningPeriod.status == PlanStatus.published)
+        .order_by(ShiftAssignment.date)
+    )).all()
     return templates.TemplateResponse("doctor/dashboard.html",
         {"request": request, "user": user, "wishes": wishes, "assignments": assignments})
 
@@ -205,8 +209,12 @@ async def delete_blocked_day(
 async def my_schedule(request: Request, user: User = Depends(get_current_user),
                        session: AsyncSession = Depends(get_session)):
     assignments = (await session.exec(
-        select(ShiftAssignment).where(ShiftAssignment.user_id == user.id)
-        .order_by(ShiftAssignment.date))).all()
+        select(ShiftAssignment)
+        .join(PlanningPeriod, ShiftAssignment.planning_period_id == PlanningPeriod.id)
+        .where(ShiftAssignment.user_id == user.id,
+               PlanningPeriod.status == PlanStatus.published)
+        .order_by(ShiftAssignment.date)
+    )).all()
     periods = {p.id: p for p in (await session.exec(select(PlanningPeriod))).all()}
     return templates.TemplateResponse("doctor/schedule.html", {
         "request": request, "user": user,
@@ -258,8 +266,12 @@ async def acknowledge_assignment(assignment_id: int,
 async def export_ical(user: User = Depends(get_current_user),
                        session: AsyncSession = Depends(get_session)):
     assignments = (await session.exec(
-        select(ShiftAssignment).where(ShiftAssignment.user_id == user.id)
-        .order_by(ShiftAssignment.date))).all()
+        select(ShiftAssignment)
+        .join(PlanningPeriod, ShiftAssignment.planning_period_id == PlanningPeriod.id)
+        .where(ShiftAssignment.user_id == user.id,
+               PlanningPeriod.status == PlanStatus.published)
+        .order_by(ShiftAssignment.date)
+    )).all()
     ical_data = build_ical(user, assignments)
     return Response(content=ical_data, media_type="text/calendar",
                     headers={"Content-Disposition": "attachment; filename=notdienste.ics"})
@@ -278,7 +290,10 @@ async def my_stats(request: Request, user: User = Depends(get_current_user),
 
     # All assignments across all published periods
     all_assignments = (await session.exec(
-        select(ShiftAssignment).where(ShiftAssignment.user_id == user.id)
+        select(ShiftAssignment)
+        .join(PlanningPeriod, ShiftAssignment.planning_period_id == PlanningPeriod.id)
+        .where(ShiftAssignment.user_id == user.id,
+               PlanningPeriod.status == PlanStatus.published)
         .order_by(ShiftAssignment.date)
     )).all()
 
