@@ -4,11 +4,15 @@ from app.services.algorithm import solve_schedule
 from app.services.fairness import compute_fairness_score
 
 
-def make_doctors(n):
+def make_doctors(n, credit_factor=1.0, desired_shifts=None, day_preference="alle"):
     class D:
-        def __init__(self, id, factor=1.0):
+        def __init__(self, id):
             self.id = id
-            self.part_time_factor = factor
+            self.credit_factor = credit_factor
+            self.part_time_factor = credit_factor  # Legacy-Compat für fairness.py
+            self.carried_over_score = 0.0
+            self.desired_shifts = desired_shifts
+            self.day_preference = day_preference
     return [D(i) for i in range(1, n + 1)]
 
 

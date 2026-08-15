@@ -26,10 +26,13 @@ class User(SQLModel, table=True):
 class DoctorProfile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", unique=True)
-    part_time_factor: float = Field(default=1.0, ge=0.1, le=1.0)
+    credit_factor: float = Field(default=1.0, ge=0.0, le=1.0)     # Anrechnungsfaktor
+    desired_shifts: Optional[int] = Field(default=None, ge=0)      # None = Minimum
+    day_preference: str = Field(default="alle")                    # "alle"|"mittwoch"|"freitag"
+    sub_carried_over_score: float = 0.0                            # Bereitschafts-Fairness
+    part_time_factor: float = Field(default=1.0, ge=0.0, le=1.0)  # Legacy — nicht entfernen
     phone: str = ""
     notes: str = ""
-    # Kumulierter Fairness-Score aus Vorjahren (wird jährlich übertragen)
     carried_over_score: float = 0.0
 
     user: User = Relationship(back_populates="profile")
