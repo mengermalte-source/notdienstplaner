@@ -27,6 +27,43 @@ async def calendar_page(request: Request, year: int = 2027,
 
 
 
+@router.post("/import-holidays")
+async def import_holidays(
+    year: int = Form(...),
+    session: AsyncSession = Depends(get_session),
+):
+    import holidays as hol_lib
+    from datetime import date as date_type
+
+    # Ensure a "Feiertag" category exists
+    cat = (await session.exec(
+        select(SpecialDayCategory).where(SpecialDayCategory.name == "Feiertag")
+    )).first()
+    if not cat:
+        cat = SpecialDayCategory(name="Feiertag", weight=2.0, color="#ef4444")
+        session.add(cat)
+        await session.commit()
+        await session.refresh(cat)
+
+    # Collect dates already stored for this year
+    existing = {sd.date for sd in (await session.exec(
+        select(SpecialDay).where(SpecialDay.date.between(
+            f"{year}-01-01", f"{year}-12-31"
+        ))
+    )).all()}
+
+    # Import Bavarian public holidays (skip duplicates)
+    bavarian = hol_lib.Germany(state="BY", years=year)
+    for d, name in sorted(bavarian.items()):
+        if d not in existing:
+            session.add(SpecialDay(
+                date=d, category_id=cat.id, label=name, is_auto_imported=True
+            ))
+
+    await session.commit()
+    return RedirectResponse(f"/admin/calendar?year={year}", status_code=302)
+
+
 @router.post("/days")
 async def add_special_day(date: str = Form(...), category_id: int = Form(...),
                            label: str = Form(""),

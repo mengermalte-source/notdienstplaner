@@ -29,6 +29,22 @@ router = APIRouter(prefix="/admin/planning", dependencies=[Depends(require_admin
 templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates")
 
 
+def _get_holiday_dates(start: date_type, end: date_type) -> set[date_type]:
+    """Bayerische gesetzliche Feiertage für den angegebenen Zeitraum."""
+    import holidays as hol_lib
+    years = set(range(start.year, end.year + 1))
+    bavarian = hol_lib.Germany(state="BY", years=years)
+    return {d for d in bavarian.keys() if start <= d <= end}
+
+
+def _get_holiday_info(start: date_type, end: date_type) -> dict[date_type, str]:
+    """Bayerische gesetzliche Feiertage mit Namen für den angegebenen Zeitraum."""
+    import holidays as hol_lib
+    years = set(range(start.year, end.year + 1))
+    bavarian = hol_lib.Germany(state="BY", years=years)
+    return {d: name for d, name in bavarian.items() if start <= d <= end}
+
+
 def _get_key_holiday_dates(year: int) -> dict[str, set[date_type]]:
     return {
         "weihnachten": {date_type(year, 12, 24), date_type(year, 12, 25), date_type(year, 12, 26)},
@@ -111,7 +127,7 @@ async def planning_page(request: Request, session: AsyncSession = Depends(get_se
         "qa_passed": None, "qa_total": None, "fairness_rows": [], "show_list": False, "show_fairness": False,
         "month": None, "all_months": [], "duties_by_date": {},
         "doctor_colors": {}, "prev_url": None, "next_url": None,
-        "day_pressure": {},
+        "day_pressure": {}, "holiday_info": {},
     })
 
 
@@ -177,7 +193,7 @@ async def run_algorithm(
 
     doctor_objs = [DoctorWithFactor(u, profiles.get(u.id)) for u in doctors]
 
-    holiday_dates = set()
+    holiday_dates = _get_holiday_dates(period.start_date, period.end_date)
 
     # Urlaubszeiträume laden
     vacation_periods = (await session.exec(
@@ -195,14 +211,14 @@ async def run_algorithm(
         )
     )).all()
 
-    # Tagesauswahl: Mi, Fr, Sa, So
+    # Tagesauswahl: Mi, Fr, Sa, So + Feiertage
     all_days = [
         period.start_date + timedelta(days=i)
         for i in range((period.end_date - period.start_date).days + 1)
     ]
     days = [
         d for d in all_days
-        if d.weekday() in (2, 4, 5, 6)
+        if d.weekday() in (2, 4, 5, 6) or d in holiday_dates
     ]
 
     if not days:
@@ -303,7 +319,7 @@ async def run_algorithm(
     ]
     sub_days = [
         d for d in all_days_period
-        if d.month in (12, 1, 2, 3, 4) and d.weekday() in (2, 4, 5, 6)
+        if d.month in (12, 1, 2, 3, 4) and (d.weekday() in (2, 4, 5, 6) or d in holiday_dates)
     ]
     if sub_days:
         primary_set = set(assignments)
@@ -353,7 +369,7 @@ async def run_substitute_algorithm(
     )).all()
     profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
 
-    holiday_dates = set()
+    holiday_dates = _get_holiday_dates(period.start_date, period.end_date)
 
     all_days = [
         period.start_date + timedelta(days=i)
@@ -362,7 +378,7 @@ async def run_substitute_algorithm(
     # Nur Dez–Apr, gleiche Tagestypen wie Primärplan
     sub_days = [
         d for d in all_days
-        if d.month in (12, 1, 2, 3, 4) and d.weekday() in (2, 4, 5, 6)
+        if d.month in (12, 1, 2, 3, 4) and (d.weekday() in (2, 4, 5, 6) or d in holiday_dates)
     ]
 
     if not sub_days:
@@ -453,7 +469,8 @@ async def period_detail(
     doctors = [u for u in users.values()
                if u.role == UserRole.doctor and u.is_active]
     doctors.sort(key=lambda u: u.full_name)
-    holiday_dates = set()
+    holiday_dates = _get_holiday_dates(period.start_date, period.end_date)
+    holiday_info = _get_holiday_info(period.start_date, period.end_date)
     scores = compute_fairness_score([(a.user_id, a.date) for a in assignments], holiday_dates)
 
     # Load wishes and vacations (used for both QA and heatmap)
@@ -586,6 +603,7 @@ async def period_detail(
         "prev_url": month_url(current_idx - 1),
         "next_url": month_url(current_idx + 1),
         "day_pressure": day_pressure,
+        "holiday_info": holiday_info,
     })
     response.set_cookie("admin_period_id", str(period_id), max_age=60 * 60 * 24 * 365, samesite="lax")
     return response
@@ -630,7 +648,7 @@ def _qa_compute_targets(doctors: list, service_days: list, holiday_dates: set) -
 def _run_qa_checks(assignments: list, period, doctors: list, profiles_map: dict,
                    wishes: list, vacations: list, recurring_blocks=None) -> list[dict]:
     from collections import Counter
-    holiday_dates: set = set()
+    holiday_dates: set = _get_holiday_dates(period.start_date, period.end_date)
     users_map = {d.id: d for d in doctors}
 
     primary = [a for a in assignments if not a.is_substitute]
@@ -854,6 +872,25 @@ def _run_qa_checks(assignments: list, period, doctors: list, profiles_map: dict,
         "error_count": len(recur_errors),
     })
 
+    # 11. Feiertage vollständig besetzt (2 Ärzte pro Feiertag)
+    holiday_errors = []
+    for d in sorted(holiday_dates):
+        if period.start_date <= d <= period.end_date:
+            got = counts_per_day.get(d, 0)
+            if got < 2:
+                wd = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"][d.weekday()]
+                holiday_errors.append(
+                    f"{d.strftime('%d.%m.%Y')} ({wd}): {got} von 2 Aerzten besetzt"
+                )
+    checks.append({
+        "id": "test_holidays_fully_staffed",
+        "name": "Feiertage vollstaendig besetzt",
+        "detail": "Jeder bayerische Feiertag im Planungszeitraum ist mit 2 Aerzten besetzt",
+        "passed": not holiday_errors,
+        "errors": holiday_errors,
+        "error_count": len(holiday_errors),
+    })
+
     return checks
 
 
@@ -1010,7 +1047,7 @@ async def publish_period(period_id: int, session: AsyncSession = Depends(get_ses
     sub_assignments = [a for a in all_assignments if a.is_substitute]
 
     if all_assignments:
-        holiday_dates_all = set()
+        holiday_dates_all = _get_holiday_dates(period.start_date, period.end_date)
 
         doctors_raw = (await session.exec(
             select(User).where(User.role == UserRole.doctor, User.is_active == True)

@@ -388,9 +388,11 @@
     {% set duties = duties_by_date.get(d, []) %}
     {% set pressure = day_pressure.get(d) %}
     {% set pressure_total = pressure.total if pressure else 0 %}
+    {% set holiday_name = holiday_info.get(d) %}
     <div class="min-h-[100px] border-r border-gray-100 last:border-r-0 p-2 flex flex-col gap-1 relative
       {% if not in_range %}bg-gray-50 opacity-40
-      {% elif duties %}{% if is_weekend %}bg-primary-50{% else %}bg-white{% endif %}
+      {% elif duties %}{% if holiday_name %}bg-red-50{% elif is_weekend %}bg-primary-50{% else %}bg-white{% endif %}
+      {% elif holiday_name %}bg-red-50
       {% elif pressure_total >= 5 %}bg-red-50
       {% elif pressure_total >= 3 %}bg-orange-50
       {% elif pressure_total >= 1 %}bg-yellow-50
@@ -398,9 +400,12 @@
       {% else %}bg-white{% endif %}
       {% if duties %}ring-inset ring-1 ring-primary-100{% endif %}">
       <span class="text-sm font-bold leading-none
-        {% if is_weekend and in_range %}text-primary-500{% elif in_range %}text-gray-700{% else %}text-gray-400{% endif %}">
+        {% if holiday_name and in_range %}text-red-600{% elif is_weekend and in_range %}text-primary-500{% elif in_range %}text-gray-700{% else %}text-gray-400{% endif %}">
         {{ d.day }}
       </span>
+      {% if holiday_name and in_range %}
+      <span class="text-[10px] leading-tight text-red-600 font-medium truncate" title="{{ holiday_name }}">{{ holiday_name }}</span>
+      {% endif %}
       <div class="flex flex-col gap-1 mt-0.5">
         {% for duty in duties %}
         {% set last_name = duty.user.full_name.split()[-1] if duty.user.full_name.split()|length > 1 else duty.user.full_name %}

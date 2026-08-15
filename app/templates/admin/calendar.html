@@ -3,16 +3,10 @@
 {% block content %}
 <h1 class="text-2xl font-bold mb-4">Sondertage verwalten</h1>
 
-<form method="post" action="/admin/calendar/import-holidays" class="flex flex-wrap gap-2 mb-6">
-  <select name="year" class="border rounded-lg px-3 py-2 bg-white">
-    {% for y in range(2025, 2030) %}
-    <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
-    {% endfor %}
-  </select>
-  <button type="submit" class="bg-accent-500 text-white px-4 py-2 rounded-lg hover:bg-accent-700 flex-shrink-0">
-    Bayerische Feiertage importieren
-  </button>
-</form>
+<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-6 text-sm text-blue-800">
+  Bayerische gesetzliche Feiertage werden <strong>automatisch</strong> vom Planungsalgorithmus berücksichtigt — kein Import nötig.
+  Hier können zusätzliche <strong>Sondertage</strong> gepflegt werden (z.B. Betriebsferien, Brückentage).
+</div>
 
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
   {% for day in special_days %}
