@@ -26,7 +26,7 @@ async def doctor_client():
 async def test_create_wish(doctor_client):
     client, user_id = doctor_client
     r = await client.post("/me/wishes", data={
-        "date": "2027-03-15", "wish_type": "negative", "priority": "soft", "reason": "Urlaub"
+        "date": "2027-03-15", "kind": "prefer_not", "reason": "Urlaub"
     })
     assert r.status_code in (200, 302)
 
@@ -34,7 +34,7 @@ async def test_create_wish(doctor_client):
 @pytest.mark.asyncio
 async def test_duplicate_wish_rejected(doctor_client):
     client, _ = doctor_client
-    data = {"date": "2027-04-01", "wish_type": "negative", "priority": "soft", "reason": ""}
+    data = {"date": "2027-04-01", "kind": "cannot", "reason": ""}
     await client.post("/me/wishes", data=data)
     r = await client.post("/me/wishes", data=data)
     assert r.status_code in (400, 200)

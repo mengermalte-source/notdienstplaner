@@ -155,3 +155,69 @@ def test_substitute_not_already_primary():
     sub_on_sat = [(uid, d) for uid, d in result if d == sat]
     assert len(sub_on_sat) == 1
     assert sub_on_sat[0][0] not in (1, 2)
+
+
+def test_coverage_sunday():
+    """Sonntag braucht genau 2 Ärzte."""
+    sun = date(2027, 1, 10)
+    assert sun.weekday() == 6
+    assert get_day_coverage(sun, set()) == 2
+
+
+def test_coverage_holiday_on_friday():
+    """Feiertag an einem Freitag → 2 Ärzte (nicht 1)."""
+    fri = date(2027, 1, 8)
+    assert fri.weekday() == 4
+    assert get_day_coverage(fri, set()) == 1         # kein Feiertag: 1
+    assert get_day_coverage(fri, {fri}) == 2         # Feiertag: 2
+
+
+def test_infeasible_returns_none():
+    """Zu wenige Ärzte für die Abdeckung → None."""
+    sat = date(2027, 1, 9)  # Samstag braucht 2 Ärzte
+    result = solve_schedule(make_doctors(1), [sat], wishes=[], holiday_dates=set())
+    assert result is None
+
+
+def test_no_duplicate_assignment_on_same_day():
+    """Kein Arzt darf an demselben Tag doppelt eingeplant sein."""
+    doctors = make_doctors(8)
+    days = [date(2027, 1, 6) + timedelta(weeks=i) for i in range(8)]  # 8 Mittwoche
+    result = solve_schedule(doctors, days, wishes=[], holiday_dates=set())
+    assert result is not None
+    seen: set[tuple[int, date]] = set()
+    for uid, d in result:
+        assert (uid, d) not in seen, f"Arzt {uid} doppelt an {d}"
+        seen.add((uid, d))
+
+
+def test_positive_wish_preferred():
+    """Ein positiver Wunsch auf einem Tag sollte zu einer Zuweisung führen."""
+    fri = date(2027, 2, 5)  # Freitag, 1 Arzt nötig
+    doctors = make_doctors(3)
+
+    class W:
+        user_id = 1
+        date = fri
+        wish_type = "positive"
+        priority = "soft"
+
+    result = solve_schedule(doctors, [fri], wishes=[W()], holiday_dates=set())
+    assert result is not None
+    assert any(uid == 1 for uid, _ in result), "Arzt mit positivem Wunsch sollte eingeplant werden"
+
+
+def test_soft_negative_wish_avoided():
+    """Ein 'Lieber nicht'-Wunsch wird vermieden, wenn genug andere Ärzte verfügbar sind."""
+    wed = date(2027, 2, 3)  # Mittwoch, 1 Arzt nötig
+    doctors = make_doctors(5)  # viel Slack → prefer_not kann eingehalten werden
+
+    class W:
+        user_id = 1
+        date = wed
+        wish_type = "negative"
+        priority = "soft"
+
+    result = solve_schedule(doctors, [wed], wishes=[W()], holiday_dates=set())
+    assert result is not None
+    assert all(uid != 1 for uid, _ in result), "Arzt mit 'Lieber nicht' sollte nicht eingeplant werden"

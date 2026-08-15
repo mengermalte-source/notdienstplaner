@@ -19,7 +19,6 @@ class PlanningPeriod(SQLModel, table=True):
     start_date: Date
     end_date: Date
     status: PlanStatus = PlanStatus.draft
-    wish_deadline: Optional[Date] = None  # bis wann können Ärzte Wünsche eingeben
     created_at: datetime = Field(default_factory=datetime.utcnow)
     published_at: Optional[datetime] = None
     notes: str = ""

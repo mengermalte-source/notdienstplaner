@@ -22,5 +22,6 @@ class SwapRequest(SQLModel, table=True):
     planning_period_id: int = Field(foreign_key="planningperiod.id")
     status: SwapStatus = SwapStatus.pending
     message: str = ""
+    is_coverage_request: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
     resolved_at: Optional[datetime] = None

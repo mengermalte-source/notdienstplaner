@@ -71,12 +71,13 @@ async def delete_special_day(day_id: int, session: AsyncSession = Depends(get_se
 
 @router.post("/days/{day_id}/set-doctors")
 async def set_day_doctors(day_id: int,
-                           required_doctors: Optional[int] = Form(None),
+                           required_doctors: Optional[str] = Form(None),
                            session: AsyncSession = Depends(get_session)):
     day = await session.get(SpecialDay, day_id)
     if not day:
         raise HTTPException(status_code=404)
-    day.required_doctors = required_doctors if required_doctors and required_doctors > 0 else None
+    doctors = int(required_doctors) if required_doctors and required_doctors.strip() else None
+    day.required_doctors = doctors if doctors and doctors > 0 else None
     session.add(day)
     await session.commit()
     return RedirectResponse("/admin/calendar", status_code=302)

@@ -8,7 +8,7 @@ from datetime import date as date_type, date as Date, datetime
 from collections import defaultdict
 from app.database import get_session
 from app.deps import get_current_user
-from app.models.user import User, DoctorProfile, UserRole
+from app.models.user import User, DoctorProfile, UserRole, DayPreference
 from app.models.wish import WishEntry, WishType, WishPriority
 from app.models.vacation import VacationPeriod
 from app.models.schedule import ShiftAssignment, PlanningPeriod, PlanStatus
@@ -45,10 +45,50 @@ async def wishes_page(request: Request, user: User = Depends(get_current_user),
         select(VacationPeriod).where(VacationPeriod.user_id == user.id)
         .order_by(VacationPeriod.start_date)
     )).all()
+    profile = (await session.exec(
+        select(DoctorProfile).where(DoctorProfile.user_id == user.id)
+    )).first()
     return templates.TemplateResponse("doctor/wishes.html",
         {"request": request, "user": user, "wishes": wishes,
          "wish_types": WishType, "priorities": WishPriority,
-         "vacations": vacations})
+         "vacations": vacations, "profile": profile})
+
+
+@router.post("/desired-shifts")
+async def set_desired_shifts(
+    desired_shifts_raw: str = Form(""),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    profile = (await session.exec(
+        select(DoctorProfile).where(DoctorProfile.user_id == user.id)
+    )).first()
+    if profile:
+        value = desired_shifts_raw.strip()
+        profile.desired_shifts = int(value) if value.isdigit() else None
+        session.add(profile)
+        await session.commit()
+    return RedirectResponse("/me/wishes", status_code=302)
+
+
+@router.post("/day-preference")
+async def set_day_preference(
+    day_preference: str = Form(...),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        pref = DayPreference(day_preference)
+    except ValueError:
+        return RedirectResponse("/me/wishes", status_code=302)
+    profile = (await session.exec(
+        select(DoctorProfile).where(DoctorProfile.user_id == user.id)
+    )).first()
+    if profile:
+        profile.day_preference = pref
+        session.add(profile)
+        await session.commit()
+    return RedirectResponse("/me/wishes", status_code=302)
 
 
 @router.post("/wishes")

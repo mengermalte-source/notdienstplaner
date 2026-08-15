@@ -10,11 +10,11 @@
 <!-- Summary cards -->
 <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
   <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
-    <p class="text-3xl font-bold text-blue-600">{{ total_count }}</p>
+    <p class="text-3xl font-bold text-primary-500">{{ total_count }}</p>
     <p class="text-xs text-gray-500 mt-1">Dienste gesamt</p>
   </div>
   <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
-    <p class="text-3xl font-bold text-indigo-600">{{ total_score }}</p>
+    <p class="text-3xl font-bold text-accent-500">{{ total_score }}</p>
     <p class="text-xs text-gray-500 mt-1">Fairness-Score</p>
   </div>
   <div class="bg-white rounded-xl border border-gray-200 p-4 text-center">
@@ -31,7 +31,7 @@
 
 <!-- Explanation of carryover -->
 {% if carryover != 0 %}
-<div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 text-sm text-blue-800">
+<div class="bg-primary-50 border border-primary-200 rounded-xl p-4 mb-6 text-sm text-primary-800">
   {% if carryover > 0 %}
   Du hast in vergangenen Perioden etwas mehr Dienste als dein fairer Anteil geleistet. Der Übertrag von <strong>+{{ carryover }}</strong> wird beim nächsten Plan automatisch berücksichtigt — du bekommst dann weniger Dienste zugeteilt.
   {% else %}
@@ -56,11 +56,11 @@
     </div>
     <div class="flex gap-4 text-center flex-shrink-0">
       <div>
-        <p class="text-xl font-bold text-blue-600">{{ pp.count }}</p>
+        <p class="text-xl font-bold text-primary-500">{{ pp.count }}</p>
         <p class="text-xs text-gray-500">Dienste</p>
       </div>
       <div>
-        <p class="text-xl font-bold text-indigo-500">{{ "%.1f"|format(pp.score) }}</p>
+        <p class="text-xl font-bold text-accent-500">{{ "%.1f"|format(pp.score) }}</p>
         <p class="text-xs text-gray-500">Score</p>
       </div>
     </div>

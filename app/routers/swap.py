@@ -1,12 +1,12 @@
 from pathlib import Path
-from fastapi import APIRouter, Depends, Request, Form, HTTPException
+from fastapi import APIRouter, Depends, Request, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from datetime import date as date_type, datetime
 from app.database import get_session
-from app.deps import get_current_user, require_admin
+from app.deps import get_current_user
 from app.models.user import User
 from app.models.swap import SwapRequest, SwapStatus
 from app.models.schedule import ShiftAssignment
@@ -51,6 +51,44 @@ async def pending_swap_count(user: User = Depends(get_current_user),
     return HTMLResponse("")
 
 
+@router.get("/me/swaps/doctor-shifts", response_class=HTMLResponse)
+async def doctor_shifts_fragment(
+    target_id: int = Query(...),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    shifts = (await session.exec(
+        select(ShiftAssignment)
+        .where(ShiftAssignment.user_id == target_id, ShiftAssignment.is_substitute == False)
+        .order_by(ShiftAssignment.date)
+    )).all()
+    if not shifts:
+        return HTMLResponse(
+            '<p class="text-sm text-gray-400 italic py-1">'
+            'Dieser Arzt hat keine Dienste in der aktuellen Periode.</p>'
+        )
+    WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+    items = ""
+    for i, s in enumerate(shifts):
+        wd = WEEKDAYS[s.date.weekday()]
+        ds = s.date.strftime("%d.%m.%Y")
+        req = "required" if i == 0 else ""
+        items += (
+            f'<label class="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer '
+            f'border border-transparent hover:bg-gray-50 '
+            f'has-[:checked]:border-primary-300 has-[:checked]:bg-primary-50">'
+            f'<input type="radio" name="their_date" value="{s.date.isoformat()}" {req} '
+            f'class="accent-primary-500 flex-shrink-0">'
+            f'<span class="text-sm"><span class="text-gray-500 w-6 inline-block">{wd}</span> {ds}</span>'
+            f'</label>'
+        )
+    return HTMLResponse(
+        f'<div class="space-y-1 pt-1">'
+        f'<p class="text-xs font-medium text-gray-500 mb-2">Dienst zum Tausch auswählen:</p>'
+        f'{items}</div>'
+    )
+
+
 @router.post("/me/swaps/request")
 async def request_swap(user: User = Depends(get_current_user),
                         target_id: int = Form(...),
@@ -84,38 +122,31 @@ async def request_swap(user: User = Depends(get_current_user),
 async def accept_swap(swap_id: int, user: User = Depends(get_current_user),
                        session: AsyncSession = Depends(get_session)):
     swap = await session.get(SwapRequest, swap_id)
-    if not swap or swap.target_id != user.id:
+    if not swap or swap.target_id != user.id or swap.status != SwapStatus.pending:
         raise HTTPException(status_code=403)
-    swap.status = SwapStatus.accepted
-    session.add(swap)
-    await session.commit()
-    return RedirectResponse("/me/swaps", status_code=302)
-
-
-@router.post("/admin/swaps/{swap_id}/approve")
-async def admin_approve_swap(swap_id: int, _: User = Depends(require_admin),
-                              session: AsyncSession = Depends(get_session)):
-    swap = await session.get(SwapRequest, swap_id)
-    if not swap or swap.status != SwapStatus.accepted:
-        raise HTTPException(status_code=400,
-                            detail="Tausch muss erst vom Zielarzt akzeptiert sein")
 
     a1 = (await session.exec(select(ShiftAssignment).where(
         ShiftAssignment.user_id == swap.requester_id,
         ShiftAssignment.date == swap.requester_shift_date))).first()
-    a2 = (await session.exec(select(ShiftAssignment).where(
-        ShiftAssignment.user_id == swap.target_id,
-        ShiftAssignment.date == swap.target_shift_date))).first()
 
-    if a1 and a2:
-        a1.user_id, a2.user_id = a2.user_id, a1.user_id
-        a1.is_manual_override = True
-        a2.is_manual_override = True
-        session.add(a1)
-        session.add(a2)
+    if swap.is_coverage_request:
+        if a1:
+            a1.user_id = swap.target_id
+            a1.is_manual_override = True
+            session.add(a1)
+    else:
+        a2 = (await session.exec(select(ShiftAssignment).where(
+            ShiftAssignment.user_id == swap.target_id,
+            ShiftAssignment.date == swap.target_shift_date))).first()
+        if a1 and a2:
+            a1.user_id, a2.user_id = a2.user_id, a1.user_id
+            a1.is_manual_override = True
+            a2.is_manual_override = True
+            session.add(a1)
+            session.add(a2)
 
     swap.status = SwapStatus.admin_approved
     swap.resolved_at = datetime.utcnow()
     session.add(swap)
     await session.commit()
-    return RedirectResponse("/admin/planning", status_code=302)
+    return RedirectResponse("/me/swaps", status_code=302)

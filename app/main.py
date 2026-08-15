@@ -193,6 +193,7 @@ async def admin_dashboard(
     acknowledged_count = 0
     fairness_rows: list[dict] = []
     next_shift = None
+    next_shift_doctors: list[str] = []
 
     if latest:
         assignments = (await session.exec(
@@ -221,8 +222,16 @@ async def admin_dashboard(
             })
         fairness_rows.sort(key=lambda r: r["score"])
 
-        future = [a.date for a in assignments if a.date >= today]
+        future = [a.date for a in assignments if a.date >= today and not a.is_substitute]
         next_shift = min(future) if future else None
+
+        users_map = {d.id: d for d in doctors}
+        if next_shift:
+            next_shift_doctors = [
+                users_map[a.user_id].full_name
+                for a in assignments
+                if a.date == next_shift and not a.is_substitute and a.user_id in users_map
+            ]
 
     # Pending swaps (accepted by target, waiting for admin)
     pending_swaps = len((await session.exec(
@@ -243,6 +252,7 @@ async def admin_dashboard(
         "open_requests": open_requests,
         "fairness_rows": fairness_rows,
         "next_shift": next_shift,
+        "next_shift_doctors": next_shift_doctors,
         "today": today,
     })
 

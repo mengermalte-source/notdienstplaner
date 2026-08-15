@@ -24,6 +24,8 @@ from types import SimpleNamespace
 from app.models.vacation import VacationPeriod
 from app.services.algorithm import solve_schedule, solve_substitute_schedule, get_day_weight
 from app.services.fairness import compute_fairness_score, compute_target_duties
+from app.models.swap import SwapRequest, SwapStatus
+from app.services.email import send_coverage_request
 
 router = APIRouter(prefix="/admin/planning", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates")
@@ -92,9 +94,6 @@ _DOCTOR_COLORS = [
 ]
 
 
-def _monday_of_week(d: date_type) -> date_type:
-    return d - timedelta(days=d.weekday())
-
 
 def _build_doctor_colors(users: dict) -> dict:
     colors = {}
@@ -142,14 +141,12 @@ async def planning_page(request: Request, session: AsyncSession = Depends(get_se
 async def create_period(
     name: str = Form(...), year: int = Form(...),
     start_date: str = Form(...), end_date: str = Form(...),
-    wish_deadline: str = Form(None),
     session: AsyncSession = Depends(get_session),
 ):
     period = PlanningPeriod(
         name=name, year=year,
         start_date=date_type.fromisoformat(start_date),
         end_date=date_type.fromisoformat(end_date),
-        wish_deadline=date_type.fromisoformat(wish_deadline) if wish_deadline else None,
     )
     session.add(period)
     await session.commit()
@@ -199,15 +196,10 @@ async def run_algorithm(
     )).all()
 
     if len(doctors) < 2:
-        periods = (await session.exec(
-            select(PlanningPeriod).order_by(PlanningPeriod.year.desc())
-        )).all()
-        return templates.TemplateResponse("admin/planning.html", {
-            "request": request, "user": admin,
-            "periods": periods, "period": None, "assignments": [],
-            "error": f"Mindestens 2 aktive Ärzte erforderlich. "
-                     f"Aktuell: {len(doctors)}.",
-        })
+        return RedirectResponse(
+            f"/admin/planning/{period_id}?error=Mindestens+2+aktive+%C3%84rzte+erforderlich.+Aktuell:+{len(doctors)}.",
+            status_code=302,
+        )
 
     profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
 
@@ -252,14 +244,10 @@ async def run_algorithm(
     ]
 
     if not days:
-        periods = (await session.exec(
-            select(PlanningPeriod).order_by(PlanningPeriod.year.desc())
-        )).all()
-        return templates.TemplateResponse("admin/planning.html", {
-            "request": request, "user": admin,
-            "periods": periods, "period": None, "assignments": [],
-            "error": "Keine zu planenden Tage gefunden. Bitte Zeitraum prüfen.",
-        })
+        return RedirectResponse(
+            f"/admin/planning/{period_id}?error=Keine+zu+planenden+Tage+gefunden.+Bitte+Zeitraum+pr%C3%BCfen.",
+            status_code=302,
+        )
 
     wishes = (await session.exec(
         select(WishEntry).where(
@@ -277,7 +265,7 @@ async def run_algorithm(
             if cur in days_set:
                 vac_wishes.append(SimpleNamespace(
                     user_id=vp.user_id, date=cur,
-                    wish_type="negative", priority="hard",
+                    wish_type="negative", priority="hard", is_vacation=True,
                 ))
             cur += timedelta(days=1)
 
@@ -301,18 +289,21 @@ async def run_algorithm(
         holiday_carryover_penalty=dict(penalty_map),
         key_holiday_dates=key_holiday_dates_for_period,
     )
+    if assignments is None:
+        assignments = solve_schedule(
+            doctor_objs, days, all_wishes, holiday_dates,
+            holiday_carryover_penalty=dict(penalty_map),
+            key_holiday_dates=key_holiday_dates_for_period,
+            strict_wishes=False,
+        )
 
     if assignments is None:
-        periods = (await session.exec(
-            select(PlanningPeriod).order_by(PlanningPeriod.year.desc())
-        )).all()
-        return templates.TemplateResponse("admin/planning.html", {
-            "request": request, "user": admin,
-            "periods": periods, "period": None, "assignments": [],
-            "error": f"Kein gültiger Plan gefunden. Ärzte: {len(doctors)}, "
-                     f"Tage: {len(days)}. "
-                     "Bitte Constraints oder Zeitraum prüfen.",
-        })
+        return RedirectResponse(
+            f"/admin/planning/{period_id}?error=Kein+g%C3%BCltiger+Plan+gefunden.+"
+            f"%C3%84rzte:+{len(doctors)},+Tage:+{len(days)}.+"
+            "Zu+viele+Urlaubssperren+oder+zu+wenig+%C3%84rzte.",
+            status_code=302,
+        )
 
     old = (await session.exec(
         select(ShiftAssignment).where(ShiftAssignment.planning_period_id == period_id)
@@ -443,6 +434,7 @@ async def run_substitute_algorithm(
 @router.get("/{period_id}", response_class=HTMLResponse)
 async def period_detail(
     period_id: int, request: Request,
+    error: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_session),
     admin: User = Depends(require_admin),
 ):
@@ -453,6 +445,9 @@ async def period_detail(
         .order_by(ShiftAssignment.date)
     )).all()
     users = {u.id: u for u in (await session.exec(select(User))).all()}
+    doctors = [u for u in users.values()
+               if u.role == UserRole.doctor and u.is_active]
+    doctors.sort(key=lambda u: u.full_name)
     sdays_raw = (await session.exec(
         select(SpecialDay, SpecialDayCategory).join(
             SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id
@@ -466,7 +461,8 @@ async def period_detail(
     return templates.TemplateResponse("admin/planning.html", {
         "request": request, "user": admin,
         "period": period, "assignments": assignments,
-        "users": users, "scores": scores, "periods": [],
+        "users": users, "doctors": doctors, "scores": scores, "periods": [],
+        "error": error,
     })
 
 
@@ -622,11 +618,6 @@ async def find_substitute(
         all_period_assignments = (await session.exec(
             select(ShiftAssignment).where(ShiftAssignment.planning_period_id == period_id)
         )).all()
-        shifts_by_doctor: dict = defaultdict(list)
-        for a in all_period_assignments:
-            if a.date != target_date:
-                shifts_by_doctor[a.user_id].append(a.date)
-
         sdays_raw = (await session.exec(
             select(SpecialDay, SpecialDayCategory).join(
                 SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id)
@@ -636,21 +627,11 @@ async def find_substitute(
         for a in all_period_assignments:
             actual_scores[a.user_id] += weight_by_date.get(a.date, 1.0)
 
-        mon_target = _monday_of_week(target_date)
-
-        def violates_gap(doctor_id: int) -> bool:
-            return any(
-                abs((_monday_of_week(d) - mon_target).days) // 7 < 3
-                for d in shifts_by_doctor[doctor_id]
-            )
-
         for doc in all_doctors:
             if doc.id in already_assigned:
                 status = "assigned"
             elif doc.id in cannot_work:
                 status = "cannot"
-            elif violates_gap(doc.id):
-                status = "gap_rule"
             else:
                 status = "available"
             profile = profiles.get(doc.id)
@@ -664,6 +645,72 @@ async def find_substitute(
         "request": request, "user": admin,
         "period": period, "target_date": target_date, "candidates": candidates,
     })
+
+
+@router.post("/{period_id}/substitute/propose")
+async def propose_coverage(
+    period_id: int,
+    target_date: str = Form(...),
+    absent_doctor_id: int = Form(...),
+    substitute_id: int = Form(...),
+    message: str = Form(""),
+    session: AsyncSession = Depends(get_session),
+    admin: User = Depends(require_admin),
+):
+    shift_date = date_type.fromisoformat(target_date)
+    absent_doctor = await session.get(User, absent_doctor_id)
+    substitute = await session.get(User, substitute_id)
+    if not absent_doctor or not substitute:
+        return RedirectResponse(
+            f"/admin/planning/{period_id}/substitute?date={target_date}", status_code=302
+        )
+    session.add(SwapRequest(
+        requester_id=absent_doctor_id,
+        target_id=substitute_id,
+        requester_shift_date=shift_date,
+        target_shift_date=shift_date,
+        planning_period_id=period_id,
+        message=message,
+        is_coverage_request=True,
+    ))
+    await session.commit()
+    send_coverage_request(
+        substitute.email, substitute.full_name,
+        absent_doctor.full_name, shift_date, message,
+    )
+    return RedirectResponse(
+        f"/admin/planning/{period_id}/substitute?date={target_date}", status_code=302
+    )
+
+
+# ---------------------------------------------------------------------------
+# Manual override: Arzt auf einem Slot hart überschreiben
+# ---------------------------------------------------------------------------
+
+@router.post("/{period_id}/assignments/{assignment_id}/override")
+async def override_assignment(
+    period_id: int,
+    assignment_id: int,
+    new_user_id: int = Form(...),
+    session: AsyncSession = Depends(get_session),
+    admin: User = Depends(require_admin),
+):
+    a = await session.get(ShiftAssignment, assignment_id)
+    if not a or a.planning_period_id != period_id:
+        return RedirectResponse(f"/admin/planning/{period_id}", status_code=302)
+    sdays_raw = (await session.exec(
+        select(SpecialDay, SpecialDayCategory).join(
+            SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id
+        ).where(SpecialDay.date == a.date)
+    )).all()
+    holiday_dates = {sd.date for sd, _ in sdays_raw}
+    a.user_id = new_user_id
+    a.is_manual_override = True
+    a.acknowledged_at = None
+    a.weighted_score = get_day_weight(a.date, holiday_dates)
+    session.add(a)
+    await session.commit()
+    return RedirectResponse(f"/admin/planning/{period_id}", status_code=302)
 
 
 # ---------------------------------------------------------------------------

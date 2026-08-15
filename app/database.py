@@ -13,6 +13,12 @@ async def init_db():
         # Idempotente Spalten-Migrationen für bestehende Datenbanken
         for sql in [
             "ALTER TABLE specialday ADD COLUMN required_doctors INTEGER",
+            "ALTER TABLE doctorprofile ADD COLUMN credit_factor REAL NOT NULL DEFAULT 1.0",
+            "ALTER TABLE doctorprofile ADD COLUMN desired_shifts INTEGER",
+            "ALTER TABLE doctorprofile ADD COLUMN day_preference TEXT NOT NULL DEFAULT 'alle'",
+            "ALTER TABLE doctorprofile ADD COLUMN sub_carried_over_score REAL NOT NULL DEFAULT 0.0",
+            "ALTER TABLE shiftassignment ADD COLUMN is_substitute INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE swaprequest ADD COLUMN is_coverage_request INTEGER NOT NULL DEFAULT 0",
         ]:
             try:
                 await conn.execute(text(sql))

@@ -21,34 +21,66 @@
       <thead class="bg-gray-50 border-b">
         <tr>
           <th class="px-4 py-3 text-left">Arzt</th>
-          <th class="px-4 py-3 text-right">Dienste</th>
-          <th class="px-4 py-3 text-right hidden sm:table-cell">Gew. Score</th>
-          <th class="px-4 py-3 text-right">Teilzeit</th>
-          <th class="px-4 py-3 text-right hidden sm:table-cell">Übertrag</th>
+          <th class="px-4 py-3 text-right">
+            <span class="inline-flex items-center justify-end gap-1">
+              Dienste
+              <span class="relative group">
+                <span class="text-[10px] text-gray-400 border border-gray-300 rounded-full px-1 cursor-help leading-none">?</span>
+                <span class="absolute bottom-full right-0 mb-1.5 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1.5 w-44 text-left z-10 font-normal">Anzahl der zugewiesenen Dienste in dieser Periode</span>
+              </span>
+            </span>
+          </th>
+          <th class="px-4 py-3 text-right hidden sm:table-cell">
+            <span class="inline-flex items-center justify-end gap-1">
+              Gew. Score
+              <span class="relative group">
+                <span class="text-[10px] text-gray-400 border border-gray-300 rounded-full px-1 cursor-help leading-none">?</span>
+                <span class="absolute bottom-full right-0 mb-1.5 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1.5 w-52 text-left z-10 font-normal">Gewichteter Score: Mi/Sa/So/FT zählen doppelt, Fr einfach. Basis für Fairness-Vergleich</span>
+              </span>
+            </span>
+          </th>
+          <th class="px-4 py-3 text-right">
+            <span class="inline-flex items-center justify-end gap-1">
+              Anrechnung
+              <span class="relative group">
+                <span class="text-[10px] text-gray-400 border border-gray-300 rounded-full px-1 cursor-help leading-none">?</span>
+                <span class="absolute bottom-full right-0 mb-1.5 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1.5 w-48 text-left z-10 font-normal">Anrechnungsfaktor: bestimmt den proportionalen Anteil an der Solldienstlast</span>
+              </span>
+            </span>
+          </th>
+          <th class="px-4 py-3 text-right hidden sm:table-cell">
+            <span class="inline-flex items-center justify-end gap-1">
+              Übertrag
+              <span class="relative group">
+                <span class="text-[10px] text-gray-400 border border-gray-300 rounded-full px-1 cursor-help leading-none">?</span>
+                <span class="absolute bottom-full right-0 mb-1.5 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1.5 w-52 text-left z-10 font-normal">Mehr- oder Minderbelastung aus dieser Periode, die in die nächste Planung einfließt</span>
+              </span>
+            </span>
+          </th>
         </tr>
       </thead>
       <tbody class="divide-y">
+        {% set max_score = scores.values() | max if scores else 1 %}
         {% for doc in doctors | sort(attribute='full_name') %}
         {% set score = scores.get(doc.id, 0) %}
         {% set count = duty_counts.get(doc.id, 0) %}
         {% set profile = profiles.get(doc.id) %}
         <tr class="hover:bg-gray-50">
           <td class="px-4 py-3 font-medium">{{ doc.full_name }}</td>
-          <td class="px-4 py-3 text-right">{{ count }}</td>
-          <td class="px-4 py-3 text-right hidden sm:table-cell">
+          <td class="px-4 py-3 text-right tabular-nums">{{ count }}</td>
+          <td class="px-4 py-3 hidden sm:table-cell">
             <div class="flex items-center justify-end gap-2">
-              {% set max_score = scores.values() | max if scores else 1 %}
-              <div class="w-16 bg-gray-200 rounded-full h-1.5">
-                <div class="bg-blue-500 h-1.5 rounded-full"
+              <div class="w-20 bg-gray-200 rounded-full h-1.5 flex-shrink-0">
+                <div class="bg-primary-500 h-1.5 rounded-full"
                      style="width: {{ [(score / max_score * 100)|int, 100]|min }}%"></div>
               </div>
-              <span class="tabular-nums">{{ "%.1f"|format(score) }}</span>
+              <span class="tabular-nums w-10 text-right text-sm">{{ "%.1f"|format(score) }}</span>
             </div>
           </td>
-          <td class="px-4 py-3 text-right text-gray-500">
-            {{ "%.0f"|format((profile.part_time_factor if profile else 1.0) * 100) }}%
+          <td class="px-4 py-3 text-right text-gray-500 tabular-nums">
+            {{ "%.0f"|format((profile.credit_factor if profile else 1.0) * 100) }}%
           </td>
-          <td class="px-4 py-3 text-right text-gray-500 hidden sm:table-cell">
+          <td class="px-4 py-3 text-right text-gray-500 tabular-nums hidden sm:table-cell">
             {{ "%.1f"|format(profile.carried_over_score if profile else 0) }}
           </td>
         </tr>

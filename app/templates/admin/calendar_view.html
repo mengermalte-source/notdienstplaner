@@ -4,7 +4,7 @@
 
 <div class="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
   <div class="flex-1 min-w-0">
-    <a href="/admin/planning/{{ period.id }}" class="text-sm text-blue-600 hover:underline">← Zur Tabelle</a>
+    <a href="/admin/planning/{{ period.id }}" class="text-sm text-primary-500 hover:underline">← Zur Tabelle</a>
     <h1 class="text-2xl font-bold mt-1 truncate">{{ period.name }}</h1>
     <p class="text-sm text-gray-500">{{ period.start_date.strftime('%d.%m.%Y') }} – {{ period.end_date.strftime('%d.%m.%Y') }}</p>
   </div>
@@ -49,7 +49,7 @@
     <div class="grid grid-cols-7 mb-1">
       {% for day_label in ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'] %}
       <div class="text-center text-xs font-medium text-gray-400 py-1
-        {% if loop.index >= 6 %}text-blue-400{% endif %}">
+        {% if loop.index >= 6 %}text-primary-300{% endif %}">
         {{ day_label }}
       </div>
       {% endfor %}
@@ -66,10 +66,10 @@
       {% set duties = duties_by_date.get(d, []) %}
       <div class="rounded-lg p-0.5 min-h-[52px] flex flex-col
         {% if not in_range %}opacity-30{% endif %}
-        {% if is_weekend and in_range %}bg-blue-50{% elif in_range %}bg-gray-50{% endif %}
-        {% if duties %}ring-1 ring-inset ring-blue-200{% endif %}">
+        {% if is_weekend and in_range %}bg-primary-50{% elif in_range %}bg-gray-50{% endif %}
+        {% if duties %}ring-1 ring-inset ring-primary-200{% endif %}">
         <span class="text-xs font-medium leading-none mb-1 px-1 pt-1
-          {% if is_weekend %}text-blue-600{% else %}text-gray-500{% endif %}
+          {% if is_weekend %}text-primary-500{% else %}text-gray-500{% endif %}
           {% if d == period.start_date or d == period.end_date %}underline{% endif %}">
           {{ d.day }}
         </span>

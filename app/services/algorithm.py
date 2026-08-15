@@ -58,6 +58,7 @@ def solve_schedule(
     time_limit_seconds: int = 30,
     holiday_carryover_penalty: dict | None = None,
     key_holiday_dates: dict | None = None,
+    strict_wishes: bool = True,
 ) -> list[tuple[int, date]] | None:
 
     if not doctors or not days:
@@ -94,24 +95,41 @@ def solve_schedule(
     # Targets (zweiphasig: Wunschanzahl + Proportional)
     targets = _compute_targets(doctors, days, holiday_dates)
 
-    # Schranken
+    # Schranken (in Anzahl Dienste)
     for doc in doctors:
         t = targets[doc.id]
-        if t >= 1.0:
-            model.add(sum(x[doc.id, i] for i in range(n_days)) >= max(1, int(t * 0.70)))
-        model.add(sum(x[doc.id, i] for i in range(n_days)) <= int(t * 1.15) + 2)
+        shifts = sum(x[doc.id, i] for i in range(n_days))
+        if t == 0.0:
+            model.add(shifts == 0)
+        else:
+            if strict_wishes and t >= 1.0:
+                model.add(shifts >= max(1, int(t * 0.70)))
+            model.add(shifts <= int(t * 1.15) + 2)
 
     # Harte Ablehnungswünsche
+    hard_wish_penalties = []
     for wish in wishes:
         if (getattr(wish, "wish_type", None) == "negative"
                 and getattr(wish, "priority", None) == "hard"
                 and wish.date in day_idx):
-            model.add(x[wish.user_id, day_idx[wish.date]] == 0)
+            if strict_wishes or getattr(wish, "is_vacation", False):
+                model.add(x[wish.user_id, day_idx[wish.date]] == 0)
+            else:
+                hard_wish_penalties.append(x[wish.user_id, day_idx[wish.date]] * 500)
 
     # Objektiv: Fairness-Abweichung + Wunschboni
     # Gewicht aus get_day_weight (Mi/Sa/So/FT = 200, Fr = 100 in Ganzzahl)
     weight_by_day = {i: int(get_day_weight(days[i], holiday_dates) * 100)
                      for i in range(n_days)}
+
+    # Ziel-Gewichtspunkte pro Arzt: Anzahl-Ziel × durchschnittliches Tagesgewicht
+    # (konvertiert count-basierte Ziele in gewichtete Punkte für das Objective)
+    total_weighted_slots = sum(
+        get_day_weight(days[i], holiday_dates) * get_day_coverage(days[i], holiday_dates)
+        for i in range(n_days)
+    )
+    total_slots_count = sum(get_day_coverage(days[i], holiday_dates) for i in range(n_days))
+    avg_weight = total_weighted_slots / total_slots_count if total_slots_count > 0 else 1.0
 
     fairness_penalties = []
 
@@ -130,9 +148,10 @@ def solve_schedule(
 
     for doc in doctors:
         weighted_sum = sum(x[doc.id, i] * weight_by_day[i] for i in range(n_days))
-        target_scaled = int(targets[doc.id] * 100)
+        # Gewichtetes Ziel: count_target × Durchschnittsgewicht (gleiche Einheit wie weighted_sum)
+        weighted_target_scaled = int(targets[doc.id] * avg_weight * 100)
         carryover_scaled = int(getattr(doc, "carried_over_score", 0.0) * 100)
-        adjusted_target = target_scaled - carryover_scaled
+        adjusted_target = weighted_target_scaled - carryover_scaled
 
         dev = model.new_int_var(-40000, 40000, f"dev_{doc.id}")
         model.add(dev == weighted_sum - adjusted_target)
@@ -149,7 +168,7 @@ def solve_schedule(
               and getattr(wish, "priority", None) == "soft"):
             fairness_penalties.append(x[wish.user_id, day_idx[wish.date]])
 
-    model.minimize(sum(fairness_penalties) * 10 - sum(wish_bonus))
+    model.minimize(sum(fairness_penalties) * 10 + sum(hard_wish_penalties) - sum(wish_bonus))
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit_seconds
@@ -177,7 +196,6 @@ def solve_substitute_schedule(
     """
     Plant 1 Bereitschaftsarzt pro Tag (nur Dez–Apr).
     Bereitschaftsarzt darf an demselben Tag nicht Primärarzt sein.
-    Schwächere Wochenendabstands-Regel (default: 1 freies Wochenende).
     Eigene Fairness-Berechnung via sub_carried_over_score
     (erwartet als carried_over_score auf den übergebenen doctor-Objekten).
     """

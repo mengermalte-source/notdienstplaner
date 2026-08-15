@@ -21,6 +21,21 @@ def _send(to: str, subject: str, body_html: str):
         s.send_message(msg)
 
 
+def send_coverage_request(target_email: str, target_name: str, absent_name: str,
+                          shift_date: date, message: str = ""):
+    date_str = shift_date.strftime("%d.%m.%Y (%A)")
+    msg_block = f"<p><em>Nachricht: {message}</em></p>" if message else ""
+    body = f"""
+    <h2>Vertretungsanfrage</h2>
+    <p>Hallo {target_name},</p>
+    <p><strong>{absent_name}</strong> kann am <strong>{date_str}</strong> nicht Dienst machen.
+    Sie werden als Vertretung angefragt.</p>
+    {msg_block}
+    <p><a href="{settings.app_base_url}/me/swaps">Zur Tauschbörse</a></p>
+    """
+    _send(target_email, f"Vertretungsanfrage für {shift_date.strftime('%d.%m.%Y')}", body)
+
+
 def send_schedule_published(user_email: str, user_name: str, period_name: str,
                              my_dates: list[date]):
     dates_html = "".join(f"<li>{d.strftime('%d.%m.%Y (%A)')}</li>" for d in sorted(my_dates))
@@ -32,13 +47,3 @@ def send_schedule_published(user_email: str, user_name: str, period_name: str,
     <p><a href="{settings.app_base_url}/me">Zum Notdienstplaner</a></p>
     """
     _send(user_email, f"Notdienstplan veröffentlicht: {period_name}", body)
-
-
-def send_wish_deadline_reminder(user_email: str, user_name: str, deadline: date, period_name: str):
-    body = f"""
-    <p>Hallo {user_name},</p>
-    <p>Bitte geben Sie Ihre Wünsche für den <strong>{period_name}</strong>
-    bis zum <strong>{deadline.strftime('%d.%m.%Y')}</strong> ein.</p>
-    <p><a href="{settings.app_base_url}/me/wishes">Wünsche eingeben</a></p>
-    """
-    _send(user_email, f"Erinnerung: Wünsche bis {deadline.strftime('%d.%m.%Y')} einreichen", body)

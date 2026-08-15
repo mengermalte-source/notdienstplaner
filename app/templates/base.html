@@ -4,7 +4,38 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Notdienstplaner{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              50:  '#e0f2f1',
+              100: '#b2dfdb',
+              200: '#80cbc4',
+              300: '#4db6ac',
+              400: '#26a69a',
+              500: '#009688',
+              600: '#00897b',
+              700: '#00796b',
+              800: '#00695c',
+              900: '#00574f',
+              950: '#003d39',
+            },
+            accent: {
+              50:  '#fff8e1',
+              100: '#ffecb3',
+              500: '#ff8f00',
+              600: '#ff6f00',
+              700: '#e65100',
+            },
+          },
+        },
+      },
+    }
+  </script>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
   <style>[x-cloak]{display:none}</style>
@@ -26,28 +57,28 @@
        x-transition:leave-end="opacity-0"></div>
 
   <!-- Sidebar -->
-  <aside class="fixed inset-y-0 left-0 w-64 bg-slate-900 flex flex-col z-20 transition-transform duration-200 ease-in-out lg:translate-x-0"
+  <aside class="fixed inset-y-0 left-0 w-64 bg-primary-950 flex flex-col z-20 transition-transform duration-200 ease-in-out lg:translate-x-0"
          :class="open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'">
 
-    <div class="flex items-center gap-3 px-5 h-16 border-b border-slate-800 flex-shrink-0">
-      <div class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+    <div class="flex items-center gap-3 px-5 h-16 border-b border-primary-900 flex-shrink-0">
+      <div class="w-8 h-8 bg-primary-700 rounded-lg flex items-center justify-center flex-shrink-0">
         <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
         </svg>
       </div>
       <div>
         <p class="text-white font-semibold text-sm leading-tight">Notdienstplaner</p>
-        <p class="text-slate-500 text-xs">Dienstplanung</p>
+        <p class="text-primary-300 text-xs">Dienstplanung</p>
       </div>
     </div>
 
     <nav class="flex-1 px-3 py-5 overflow-y-auto space-y-0.5">
       {% if user and user.role == 'admin' %}
 
-      <p class="text-xs font-semibold text-slate-500 uppercase tracking-widest px-3 mb-3">Administration</p>
+      <p class="text-xs font-semibold text-primary-300 uppercase tracking-widest px-3 mb-3">Administration</p>
 
       <a href="/admin" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-        {% if path == '/admin' %}bg-blue-600 text-white{% else %}text-slate-400 hover:text-white hover:bg-slate-800{% endif %}">
+        {% if path == '/admin' %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
         </svg>
@@ -55,7 +86,7 @@
       </a>
 
       <a href="/admin/users" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-        {% if path.startswith('/admin/users') %}bg-blue-600 text-white{% else %}text-slate-400 hover:text-white hover:bg-slate-800{% endif %}">
+        {% if path.startswith('/admin/users') %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
         </svg>
@@ -63,7 +94,7 @@
       </a>
 
       <a href="/admin/calendar" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-        {% if path.startswith('/admin/calendar') %}bg-blue-600 text-white{% else %}text-slate-400 hover:text-white hover:bg-slate-800{% endif %}">
+        {% if path.startswith('/admin/calendar') %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
         </svg>
@@ -71,7 +102,7 @@
       </a>
 
       <a href="/admin/planning" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-        {% if path.startswith('/admin/planning') %}bg-blue-600 text-white{% else %}text-slate-400 hover:text-white hover:bg-slate-800{% endif %}">
+        {% if path.startswith('/admin/planning') %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
         </svg>
@@ -79,7 +110,7 @@
       </a>
 
       <a href="/admin/substitute" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-        {% if path.startswith('/admin/substitute') %}bg-blue-600 text-white{% else %}text-slate-400 hover:text-white hover:bg-slate-800{% endif %}">
+        {% if path.startswith('/admin/substitute') %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
         </svg>
@@ -87,7 +118,7 @@
       </a>
 
       <a href="/admin/statistics" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-        {% if path.startswith('/admin/statistics') %}bg-blue-600 text-white{% else %}text-slate-400 hover:text-white hover:bg-slate-800{% endif %}">
+        {% if path.startswith('/admin/statistics') %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
         </svg>
@@ -96,10 +127,10 @@
 
       {% else %}
 
-      <p class="text-xs font-semibold text-slate-500 uppercase tracking-widest px-3 mb-3">Mein Bereich</p>
+      <p class="text-xs font-semibold text-primary-300 uppercase tracking-widest px-3 mb-3">Mein Bereich</p>
 
       <a href="/me" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-        {% if path == '/me' %}bg-blue-600 text-white{% else %}text-slate-400 hover:text-white hover:bg-slate-800{% endif %}">
+        {% if path == '/me' %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
         </svg>
@@ -107,7 +138,7 @@
       </a>
 
       <a href="/me/schedule" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-        {% if path.startswith('/me/schedule') %}bg-blue-600 text-white{% else %}text-slate-400 hover:text-white hover:bg-slate-800{% endif %}">
+        {% if path.startswith('/me/schedule') %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
         </svg>
@@ -115,7 +146,7 @@
       </a>
 
       <a href="/me/wishes" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-        {% if path.startswith('/me/wishes') %}bg-blue-600 text-white{% else %}text-slate-400 hover:text-white hover:bg-slate-800{% endif %}">
+        {% if path.startswith('/me/wishes') %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
         </svg>
@@ -123,7 +154,7 @@
       </a>
 
       <a href="/me/swaps" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-        {% if path.startswith('/me/swaps') %}bg-blue-600 text-white{% else %}text-slate-400 hover:text-white hover:bg-slate-800{% endif %}">
+        {% if path.startswith('/me/swaps') %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
         </svg>
@@ -132,7 +163,7 @@
       </a>
 
       <a href="/me/stats" @click="open = false" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-        {% if path.startswith('/me/stats') %}bg-blue-600 text-white{% else %}text-slate-400 hover:text-white hover:bg-slate-800{% endif %}">
+        {% if path.startswith('/me/stats') %}bg-primary-900 text-white{% else %}text-primary-200 hover:text-white hover:bg-primary-900{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
         </svg>
@@ -142,21 +173,21 @@
       {% endif %}
     </nav>
 
-    <div class="flex-shrink-0 border-t border-slate-800 p-3">
+    <div class="flex-shrink-0 border-t border-primary-900 p-3">
       {% if user %}
       {% set parts = user.full_name.split() %}
       <div class="flex items-center gap-3 px-2 py-2 mb-1">
-        <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 select-none">
+        <div class="w-8 h-8 rounded-full bg-primary-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 select-none">
           {{ parts[0][0] | upper }}{% if parts | length > 1 %}{{ parts[1][0] | upper }}{% endif %}
         </div>
         <div class="min-w-0 flex-1">
           <p class="text-white text-sm font-medium truncate leading-tight">{{ user.full_name }}</p>
-          <p class="text-slate-500 text-xs truncate">{{ 'Administrator' if user.role == 'admin' else 'Arzt' }}</p>
+          <p class="text-primary-300 text-xs truncate">{{ 'Administrator' if user.role == 'admin' else 'Arzt' }}</p>
         </div>
       </div>
       {% endif %}
       {% if user and user.role != 'admin' %}
-      <a href="/me/password" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-xs text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">
+      <a href="/me/password" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-xs text-primary-300 hover:text-white hover:bg-primary-900 transition-colors">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
         </svg>
@@ -164,7 +195,7 @@
       </a>
       {% endif %}
       <form method="post" action="/logout">
-        <button type="submit" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-xs text-slate-500 hover:text-white hover:bg-slate-800 transition-colors">
+        <button type="submit" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-xs text-primary-300 hover:text-white hover:bg-primary-900 transition-colors">
           <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
           </svg>
@@ -179,13 +210,13 @@
   <div class="flex-1 lg:ml-64 min-h-screen flex flex-col">
 
     <!-- Mobile topbar -->
-    <header class="lg:hidden sticky top-0 z-10 flex items-center gap-3 h-14 px-4 bg-slate-900 flex-shrink-0">
-      <button @click="open = !open" class="p-2 -ml-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+    <header class="lg:hidden sticky top-0 z-10 flex items-center gap-3 h-14 px-4 bg-primary-950 flex-shrink-0">
+      <button @click="open = !open" class="p-2 -ml-1 rounded-lg text-primary-200 hover:text-white hover:bg-primary-900 transition-colors">
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
         </svg>
       </button>
-      <div class="w-6 h-6 bg-blue-500 rounded flex items-center justify-center flex-shrink-0">
+      <div class="w-6 h-6 bg-primary-700 rounded flex items-center justify-center flex-shrink-0">
         <svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
         </svg>
