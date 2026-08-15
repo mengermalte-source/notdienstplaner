@@ -6,7 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from app.database import get_session
 from app.deps import require_admin
-from app.models.user import User, UserRole, DoctorProfile
+from app.models.user import User, UserRole, DoctorProfile, DayPreference
 from app.services.auth import hash_password
 
 router = APIRouter(prefix="/admin/users", dependencies=[Depends(require_admin)])
@@ -45,4 +45,44 @@ async def toggle_active(user_id: int, session: AsyncSession = Depends(get_sessio
         user.is_active = not user.is_active
         session.add(user)
         await session.commit()
+    return RedirectResponse("/admin/users", status_code=302)
+
+
+@router.post("/{user_id}/update-profile")
+async def update_profile(
+    user_id: int,
+    part_time_factor: float = Form(1.0),
+    credit_factor: float = Form(1.0),
+    desired_shifts_raw: str = Form(""),
+    day_preference_raw: str = Form("alle"),
+    phone: str = Form(""),
+    notes: str = Form(""),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.exec(
+        select(DoctorProfile).where(DoctorProfile.user_id == user_id)
+    )
+    profile = result.first()
+    if profile is None:
+        profile = DoctorProfile(user_id=user_id)
+        session.add(profile)
+
+    profile.credit_factor = max(0.0, min(1.0, credit_factor))
+    # Keep legacy part_time_factor in sync with credit_factor (R-1 ruling)
+    profile.part_time_factor = profile.credit_factor
+
+    profile.desired_shifts = (
+        int(desired_shifts_raw) if desired_shifts_raw.strip().isdigit() else None
+    )
+
+    try:
+        profile.day_preference = DayPreference(day_preference_raw)
+    except ValueError:
+        profile.day_preference = DayPreference.alle
+
+    profile.phone = phone
+    profile.notes = notes
+
+    session.add(profile)
+    await session.commit()
     return RedirectResponse("/admin/users", status_code=302)
