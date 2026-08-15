@@ -16,6 +16,7 @@ from app.models.special_day import SpecialDay, SpecialDayCategory
 from app.services.auth import hash_password, verify_password
 from app.services.ical import build_ical
 from app.services.fairness import compute_fairness_score
+from app.services.algorithm import get_day_weight
 
 router = APIRouter(prefix="/me")
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
@@ -173,14 +174,14 @@ async def my_stats(request: Request, user: User = Depends(get_current_user),
         select(SpecialDay, SpecialDayCategory).join(
             SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id)
     )).all()
-    weight_by_date = {sd.date: cat.weight for sd, cat in sdays_raw}
+    holiday_dates_set = {sd.date for sd, cat in sdays_raw}
 
     # Per-period breakdown
     per_period = defaultdict(lambda: {"count": 0, "score": 0.0, "period": None})
     for a in all_assignments:
         pid = a.planning_period_id
         per_period[pid]["count"] += 1
-        per_period[pid]["score"] += weight_by_date.get(a.date, 1.0)
+        per_period[pid]["score"] += get_day_weight(a.date, holiday_dates_set)
         per_period[pid]["period"] = periods_map.get(pid)
 
     # Peer comparison (anonymized totals)

@@ -78,10 +78,10 @@ def test_weight_holiday():
 # ---------------------------------------------------------------------------
 
 def test_basic_schedule_covers_all_days():
-    """Mittwoch, Freitag, Samstag, Sonntag werden abgedeckt."""
-    # Woche: Mi 5.1., Fr 7.1., Sa 8.1., So 9.1.2027
+    """Mi, Fr, Sa, So werden abgedeckt."""
+    # Mi 6.1., Fr 8.1., Sa 9.1., So 10.1.2027
     doctors = make_doctors(8)
-    days = [date(2027, 1, 5), date(2027, 1, 7), date(2027, 1, 8), date(2027, 1, 9)]
+    days = [date(2027, 1, 6), date(2027, 1, 8), date(2027, 1, 9), date(2027, 1, 10)]
     result = solve_schedule(doctors, days, wishes=[], holiday_dates=set())
     assert result is not None
     assigned_days = {d for _, d in result}
