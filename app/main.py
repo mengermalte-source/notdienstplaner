@@ -309,16 +309,17 @@ async def nav_period_selector(
             active = all_periods[0]
         current_pid = str(active.id)
 
-    # Show: periods that ended within the last 6 months, or haven't ended yet
-    from datetime import timedelta
-    cutoff = today - timedelta(days=180)
-    visible = [p for p in all_periods if p.end_date >= cutoff]
-    # Always include the currently selected period even if it's older
+    # Show: 1 past + current + 2 future
+    periods_asc = sorted(all_periods, key=lambda p: p.start_date)
+    past = [p for p in periods_asc if p.end_date < today]
+    current_and_future = [p for p in periods_asc if p.end_date >= today]
+    visible = past[-1:] + current_and_future[:3]
+    # Always include the currently selected period even if outside the window
     if current_pid and not any(str(p.id) == current_pid for p in visible):
         extra = next((p for p in all_periods if str(p.id) == current_pid), None)
         if extra:
             visible.append(extra)
-            visible.sort(key=lambda p: p.start_date, reverse=True)
+            visible.sort(key=lambda p: p.start_date)
 
     return _templates.TemplateResponse("partials/period_selector.html", {
         "request": request,

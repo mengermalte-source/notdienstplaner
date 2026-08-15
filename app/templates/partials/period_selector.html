@@ -4,29 +4,12 @@
   <form method="post" action="/admin/set-period">
     <select name="period_id" onchange="this.form.submit()"
             class="w-full bg-primary-900 text-primary-100 border border-primary-700 rounded-lg px-2.5 py-1.5 text-xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary-500">
-      {% set past = periods | selectattr('end_date', 'lt', today) | list %}
-      {% set upcoming = periods | rejectattr('end_date', 'lt', today) | list %}
-      {% if upcoming %}
-      <optgroup label="Aktuell &amp; Geplant">
-        {% for p in upcoming | sort(attribute='start_date') %}
-        <option value="{{ p.id }}" {% if current_pid == p.id|string %}selected{% endif %}>
-          {% if p.status == 'published' %}✓ {% endif %}{{ p.name }}
-        </option>
-        {% endfor %}
-      </optgroup>
-      {% endif %}
-      {% if past %}
-      <optgroup label="Abgeschlossen">
-        {% for p in past | sort(attribute='start_date', reverse=true) %}
-        <option value="{{ p.id }}" {% if current_pid == p.id|string %}selected{% endif %}>
-          {% if p.status == 'published' %}✓ {% endif %}{{ p.name }}
-        </option>
-        {% endfor %}
-      </optgroup>
-      {% endif %}
+      {% for p in periods %}
+      <option value="{{ p.id }}" {% if current_pid == p.id|string %}selected{% endif %}>
+        {% if p.status == 'published' %}✓ {% endif %}{{ p.name }}
+      </option>
+      {% endfor %}
     </select>
   </form>
-  {% else %}
-  <p class="text-xs text-primary-500">Keine Zeiträume vorhanden.</p>
   {% endif %}
 </div>
