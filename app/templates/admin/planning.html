@@ -141,7 +141,7 @@
       Algorithmus ausführen
     </button>
   </form>
-  {% if assignments and (period.start_date.month in range(10, 13) or period.end_date.month in range(1, 5)) %}
+  {% if assignments %}
   <form method="post" action="/admin/planning/{{ period.id }}/run-substitute" class="inline">
     <button type="submit"
             class="bg-amber-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-amber-700 text-sm">

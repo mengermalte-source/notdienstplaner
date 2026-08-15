@@ -659,6 +659,8 @@ async def publish_period(period_id: int, session: AsyncSession = Depends(get_ses
     all_assignments = (await session.exec(
         select(ShiftAssignment).where(ShiftAssignment.planning_period_id == period_id)
     )).all()
+    primary_assignments = [a for a in all_assignments if not a.is_substitute]
+    sub_assignments = [a for a in all_assignments if a.is_substitute]
 
     if all_assignments:
         sdays_raw = (await session.exec(
@@ -672,17 +674,26 @@ async def publish_period(period_id: int, session: AsyncSession = Depends(get_ses
         )).all()
         profiles_map = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
 
+        # Primary fairness carryover (excludes substitutes)
         actual_scores: dict = compute_fairness_score(
-            [(a.user_id, a.date) for a in all_assignments],
+            [(a.user_id, a.date) for a in primary_assignments],
             holiday_dates_all,
         )
-
         total_factor = sum(
             profiles_map[u.id].credit_factor if u.id in profiles_map else 1.0
             for u in doctors_raw
         ) or 1.0
         total_weighted = sum(
-            get_day_weight(a.date, holiday_dates_all) for a in all_assignments
+            get_day_weight(a.date, holiday_dates_all) for a in primary_assignments
+        )
+
+        # Substitute fairness carryover (sub_carried_over_score)
+        sub_scores: dict = compute_fairness_score(
+            [(a.user_id, a.date) for a in sub_assignments],
+            holiday_dates_all,
+        )
+        total_sub_weighted = sum(
+            get_day_weight(a.date, holiday_dates_all) for a in sub_assignments
         )
 
         for u in doctors_raw:
@@ -693,15 +704,27 @@ async def publish_period(period_id: int, session: AsyncSession = Depends(get_ses
             profile.carried_over_score = round(
                 profile.carried_over_score + (actual_scores.get(u.id, 0.0) - fair_share), 3
             )
+            sub_fair_share = (profile.credit_factor / total_factor) * total_sub_weighted
+            profile.sub_carried_over_score = round(
+                profile.sub_carried_over_score + (sub_scores.get(u.id, 0.0) - sub_fair_share), 3
+            )
             session.add(profile)
 
-        # Feiertagshistorie speichern
+        # Feiertagshistorie speichern (idempotent: alte Zeilen erst löschen)
+        old_carryovers = (await session.exec(
+            select(HolidayDutyCarryover).where(
+                HolidayDutyCarryover.planning_period_id == period_id
+            )
+        )).all()
+        for old in old_carryovers:
+            await session.delete(old)
+
         key_holidays = _get_key_holiday_dates(period.year)
         for key, date_set in key_holidays.items():
             for u in doctors_raw:
                 worked = any(
-                    a.user_id == u.id and a.date in date_set and not a.is_substitute
-                    for a in all_assignments
+                    a.user_id == u.id and a.date in date_set
+                    for a in primary_assignments
                 )
                 session.add(HolidayDutyCarryover(
                     user_id=u.id,
