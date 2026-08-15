@@ -296,22 +296,6 @@
 {% else %}
 <!-- Calendar view (default) -->
 
-<!-- Legend -->
-<div class="flex flex-wrap gap-2 mb-5">
-  {% set shown_doctors = [] %}
-  {% for date_duties in duties_by_date.values() %}
-    {% for doc in date_duties %}
-      {% if doc.id not in shown_doctors %}
-        {% set _ = shown_doctors.append(doc.id) %}
-        <span class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 font-medium">
-          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 {{ doctor_colors.get(doc.id, 'bg-gray-400') }}"></span>
-          {{ doc.full_name }}
-        </span>
-      {% endif %}
-    {% endfor %}
-  {% endfor %}
-</div>
-
 <!-- Month navigation -->
 <div class="flex items-center justify-between mb-4 gap-2">
   <a href="{{ prev_url or '#' }}"
