@@ -21,7 +21,7 @@ from app.models.user import DoctorProfile, User, UserRole
 from app.models.wish import WishEntry, WishPriority, WishType
 from types import SimpleNamespace
 from app.models.vacation import VacationPeriod
-from app.services.algorithm import solve_schedule, get_day_weight
+from app.services.algorithm import solve_schedule, solve_substitute_schedule, get_day_weight
 from app.services.fairness import compute_fairness_score, compute_target_duties
 
 router = APIRouter(prefix="/admin/planning", dependencies=[Depends(require_admin)])
@@ -234,6 +234,111 @@ async def run_algorithm(
             user_id=user_id,
             date=day,
             weighted_score=get_day_weight(day, holiday_dates),
+        ))
+    await session.commit()
+    return RedirectResponse(f"/admin/planning/{period_id}", status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# Run substitute algorithm (Bereitschaft Dez–Apr)
+# ---------------------------------------------------------------------------
+
+@router.post("/{period_id}/run-substitute")
+async def run_substitute_algorithm(
+    period_id: int,
+    session: AsyncSession = Depends(get_session),
+    admin: User = Depends(require_admin),
+):
+    period = await session.get(PlanningPeriod, period_id)
+    if not period:
+        return RedirectResponse("/admin/planning", status_code=302)
+
+    doctors = (await session.exec(
+        select(User).where(User.role == UserRole.doctor, User.is_active == True)
+    )).all()
+    profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
+
+    sdays_raw = (await session.exec(
+        select(SpecialDay, SpecialDayCategory).join(
+            SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id
+        ).where(
+            SpecialDay.date >= period.start_date,
+            SpecialDay.date <= period.end_date,
+        )
+    )).all()
+    holiday_dates = {sd.date for sd, _ in sdays_raw}
+
+    all_days = [
+        period.start_date + timedelta(days=i)
+        for i in range((period.end_date - period.start_date).days + 1)
+    ]
+    # Nur Dez–Apr, gleiche Tagestypen wie Primärplan
+    sub_days = [
+        d for d in all_days
+        if d.month in (12, 1, 2, 3, 4)
+        and (d.weekday() in (2, 4, 5, 6) or d in holiday_dates)
+    ]
+
+    if not sub_days:
+        return RedirectResponse(
+            f"/admin/planning/{period_id}?error=Keine+Bereitschaftstage",
+            status_code=302,
+        )
+
+    primary_assignments = (await session.exec(
+        select(ShiftAssignment).where(
+            ShiftAssignment.planning_period_id == period_id,
+            ShiftAssignment.is_substitute == False,
+        )
+    )).all()
+    primary_set = {(a.user_id, a.date) for a in primary_assignments}
+
+    wishes = (await session.exec(
+        select(WishEntry).where(
+            WishEntry.date >= period.start_date,
+            WishEntry.date <= period.end_date,
+        )
+    )).all()
+
+    class DoctorWithFactor:
+        def __init__(self, user, profile):
+            self.id = user.id
+            self.credit_factor = profile.credit_factor if profile else 1.0
+            # sub_carried_over_score für Bereitschafts-Fairness
+            self.carried_over_score = profile.sub_carried_over_score if profile else 0.0
+            self.desired_shifts = None
+            self.day_preference = "alle"
+
+    doctor_objs = [DoctorWithFactor(u, profiles.get(u.id)) for u in doctors]
+
+    # Alte Bereitschaftsdienste löschen
+    old_subs = (await session.exec(
+        select(ShiftAssignment).where(
+            ShiftAssignment.planning_period_id == period_id,
+            ShiftAssignment.is_substitute == True,
+        )
+    )).all()
+    for s in old_subs:
+        await session.delete(s)
+
+    sub_assignments = solve_substitute_schedule(
+        doctor_objs, sub_days, primary_set, wishes, holiday_dates
+    )
+
+    if sub_assignments is None:
+        await session.commit()  # commit deletions before redirect
+        return RedirectResponse(
+            f"/admin/planning/{period_id}?error=Kein+Bereitschaftsplan+gefunden",
+            status_code=302,
+        )
+
+    for user_id, day in sub_assignments:
+        session.add(ShiftAssignment(
+            planning_period_id=period_id,
+            user_id=user_id,
+            date=day,
+            weighted_score=get_day_weight(day, holiday_dates),
+            is_substitute=True,
         ))
     await session.commit()
     return RedirectResponse(f"/admin/planning/{period_id}", status_code=302)

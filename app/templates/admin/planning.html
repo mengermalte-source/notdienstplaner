@@ -141,6 +141,14 @@
       Algorithmus ausführen
     </button>
   </form>
+  {% if assignments and (period.start_date.month in range(10, 13) or period.end_date.month in range(1, 5)) %}
+  <form method="post" action="/admin/planning/{{ period.id }}/run-substitute" class="inline">
+    <button type="submit"
+            class="bg-amber-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-amber-700 text-sm">
+      Bereitschaft planen (Dez–Apr)
+    </button>
+  </form>
+  {% endif %}
   {% if period.status == 'draft' and assignments %}
   <form method="post" action="/admin/planning/{{ period.id }}/publish">
     <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm">
@@ -158,15 +166,26 @@
         <tr>
           <th class="px-4 py-3 text-left">Datum</th>
           <th class="px-4 py-3 text-left">Arzt</th>
+          <th class="px-4 py-3 text-left hidden sm:table-cell">Typ</th>
           <th class="px-4 py-3 text-left hidden sm:table-cell">Gewicht</th>
           <th class="px-4 py-3 text-left hidden sm:table-cell">Override</th>
         </tr>
       </thead>
       <tbody class="divide-y">
         {% for a in assignments %}
-        <tr class="hover:bg-gray-50 {% if a.is_manual_override %}bg-yellow-50{% endif %}">
+        <tr class="hover:bg-gray-50 {% if a.is_substitute %}bg-amber-50{% elif a.is_manual_override %}bg-yellow-50{% endif %}">
           <td class="px-4 py-2 font-mono">{{ a.date.strftime('%d.%m.%Y') }}</td>
-          <td class="px-4 py-2">{{ users[a.user_id].full_name if a.user_id in users else '?' }}</td>
+          <td class="px-4 py-2">
+            {{ users[a.user_id].full_name if a.user_id in users else '?' }}
+            {% if a.is_substitute %}<span class="ml-1 text-xs text-amber-700 font-semibold">(B)</span>{% endif %}
+          </td>
+          <td class="px-4 py-2 text-xs hidden sm:table-cell">
+            {% if a.is_substitute %}
+            <span class="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded">Bereitschaft</span>
+            {% else %}
+            <span class="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded">Primär</span>
+            {% endif %}
+          </td>
           <td class="px-4 py-2 text-gray-500 hidden sm:table-cell">{{ "%.1f"|format(a.weighted_score) }}</td>
           <td class="px-4 py-2 text-xs text-orange-500 hidden sm:table-cell">
             {% if a.is_manual_override %}Manuell{% endif %}
