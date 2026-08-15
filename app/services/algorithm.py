@@ -1,108 +1,155 @@
 from datetime import date, timedelta
 from ortools.sat.python import cp_model
-from app.services.fairness import compute_target_duties
 
 
 def _monday_of_week(d: date) -> date:
     return d - timedelta(days=d.weekday())
 
 
+def get_day_coverage(d: date, holiday_dates: set) -> int:
+    """Anzahl benötigter Ärzte für diesen Tag."""
+    if d in holiday_dates:
+        return 2
+    if d.weekday() in (2, 4):  # Mittwoch, Freitag
+        return 1
+    return 2  # Samstag, Sonntag
+
+
+def get_day_weight(d: date, holiday_dates: set) -> float:
+    """Fairness-Gewicht: Freitag (kein FT) = 1.0, alle anderen = 2.0."""
+    if d.weekday() == 4 and d not in holiday_dates:
+        return 1.0
+    return 2.0
+
+
+def _compute_targets(
+    doctors: list,
+    days: list[date],
+    holiday_dates: set,
+) -> dict[int, float]:
+    """
+    Zweiphasige Zielberechnung:
+    1. Ärzte mit desired_shifts bekommen ihren Wunschwert als Ziel.
+    2. Restslots werden proportional zu credit_factor auf Minimum-Ärzte verteilt.
+    """
+    total_slots = sum(get_day_coverage(d, holiday_dates) for d in days)
+
+    fixed = [doc for doc in doctors if getattr(doc, "desired_shifts", None) is not None]
+    flex = [doc for doc in doctors if getattr(doc, "desired_shifts", None) is None]
+
+    fixed_claimed = sum(doc.desired_shifts for doc in fixed)
+    flex_slots = max(0, total_slots - fixed_claimed)
+    total_flex_credit = sum(
+        getattr(doc, "credit_factor", getattr(doc, "part_time_factor", 1.0))
+        for doc in flex
+    ) or 1.0
+
+    targets: dict[int, float] = {}
+    for doc in fixed:
+        targets[doc.id] = float(doc.desired_shifts)
+    for doc in flex:
+        cf = getattr(doc, "credit_factor", getattr(doc, "part_time_factor", 1.0))
+        targets[doc.id] = (cf / total_flex_credit) * flex_slots
+    return targets
+
+
 def solve_schedule(
     doctors: list,
     days: list[date],
     wishes: list,
-    special_days: list,
-    doctors_per_day: int = 2,
+    holiday_dates: set,
     time_limit_seconds: int = 30,
     min_free_weekends_between: int = 2,
-    day_requirements: dict | None = None,
 ) -> list[tuple[int, date]] | None:
+
+    if not doctors or not days:
+        return None
 
     model = cp_model.CpModel()
     n_days = len(days)
     day_idx = {d: i for i, d in enumerate(days)}
-    doctor_ids = [doc.id for doc in doctors]
 
     x = {(doc.id, i): model.new_bool_var(f"x_{doc.id}_{i}")
          for doc in doctors for i in range(n_days)}
 
-    # Per-day staffing requirement (supports special days with more/fewer doctors)
-    day_req = day_requirements or {}
+    # Abdeckung pro Tag (Mi/Fr = 1, Sa/So/FT = 2)
     for i, day in enumerate(days):
-        req = day_req.get(day, doctors_per_day)
-        model.add(sum(x[did, i] for did in doctor_ids) == req)
+        req = get_day_coverage(day, holiday_dates)
+        model.add(sum(x[doc.id, i] for doc in doctors) == req)
 
-    # No two consecutive planned days for the same doctor
+    # Tagespräferenz: nur Mittwoch oder nur Freitag
     for doc in doctors:
-        for i in range(n_days - 1):
-            model.add(x[doc.id, i] + x[doc.id, i + 1] <= 1)
+        pref = getattr(doc, "day_preference", "alle")
+        # Support DayPreference enum or string
+        pref_val = pref.value if hasattr(pref, "value") else str(pref)
+        if pref_val == "mittwoch":
+            for i, day in enumerate(days):
+                if day.weekday() != 2:
+                    model.add(x[doc.id, i] == 0)
+        elif pref_val == "freitag":
+            for i, day in enumerate(days):
+                if day.weekday() != 4:
+                    model.add(x[doc.id, i] == 0)
 
-    # At least `min_free_weekends_between` free weekends between any two
-    # weekend/holiday duties. Uses calendar week distance for correctness.
-    holiday_dates = {sd.date for sd in special_days}
+    # Kein Folgedienstverbot mehr (bewusst entfernt)
 
-    def is_weekend_or_holiday(d: date) -> bool:
-        return d.weekday() >= 5 or d in holiday_dates
-
+    # Wochenendabstand: ≥2 freie Wochenenden zwischen Sa/So/FT-Diensten
     required_week_gap = min_free_weekends_between + 1
-
     for doc in doctors:
         for i in range(n_days):
-            if not is_weekend_or_holiday(days[i]):
+            if not (days[i].weekday() >= 5 or days[i] in holiday_dates):
                 continue
             mon_i = _monday_of_week(days[i])
             for j in range(i + 1, n_days):
+                if not (days[j].weekday() >= 5 or days[j] in holiday_dates):
+                    continue
                 week_gap = (_monday_of_week(days[j]) - mon_i).days // 7
                 if week_gap >= required_week_gap:
                     break
-                if is_weekend_or_holiday(days[j]):
-                    model.add(x[doc.id, i] + x[doc.id, j] <= 1)
+                model.add(x[doc.id, i] + x[doc.id, j] <= 1)
 
-    # Fair-share targets based on actual total slots (respects per-day overrides)
-    total_slots = sum(day_req.get(day, doctors_per_day) for day in days)
-    targets = compute_target_duties(doctors, total_slots)
+    # Targets (zweiphasig: Wunschanzahl + Proportional)
+    targets = _compute_targets(doctors, days, holiday_dates)
 
-    # Maximum: ~15% above fair share
+    # Schranken
     for doc in doctors:
-        max_duties = int(targets[doc.id] * 1.15) + 2
-        model.add(sum(x[doc.id, i] for i in range(n_days)) <= max_duties)
+        t = targets[doc.id]
+        if t >= 1.0:
+            model.add(sum(x[doc.id, i] for i in range(n_days)) >= max(1, int(t * 0.70)))
+        model.add(sum(x[doc.id, i] for i in range(n_days)) <= int(t * 1.15) + 2)
 
-    # Minimum: 70% of fair share (only when expected ≥1 shift)
-    for doc in doctors:
-        target = targets[doc.id]
-        if target >= 1.0:
-            min_duties = max(1, int(target * 0.70))
-            model.add(sum(x[doc.id, i] for i in range(n_days)) >= min_duties)
-
-    # Hard unavailability wishes
+    # Harte Ablehnungswünsche
     for wish in wishes:
-        if wish.wish_type == "negative" and wish.priority == "hard" and wish.date in day_idx:
+        if (getattr(wish, "wish_type", None) == "negative"
+                and getattr(wish, "priority", None) == "hard"
+                and wish.date in day_idx):
             model.add(x[wish.user_id, day_idx[wish.date]] == 0)
 
-    # Objective: minimise fairness deviation (adjusted by carryover) + soft violations
-    weight_by_date = {sd.date: int(sd.weight * 100) for sd in special_days}
+    # Objektiv: Fairness-Abweichung + Wunschboni
+    # Gewicht aus get_day_weight (Mi/Sa/So/FT = 200, Fr = 100 in Ganzzahl)
+    weight_by_day = {i: int(get_day_weight(days[i], holiday_dates) * 100)
+                     for i in range(n_days)}
 
     fairness_penalties = []
     for doc in doctors:
-        weighted_sum = sum(
-            x[doc.id, i] * weight_by_date.get(days[i], 100)
-            for i in range(n_days)
-        )
+        weighted_sum = sum(x[doc.id, i] * weight_by_day[i] for i in range(n_days))
         target_scaled = int(targets[doc.id] * 100)
         carryover_scaled = int(getattr(doc, "carried_over_score", 0.0) * 100)
         adjusted_target = target_scaled - carryover_scaled
 
-        dev = model.new_int_var(-20000, 20000, f"dev_{doc.id}")
+        dev = model.new_int_var(-40000, 40000, f"dev_{doc.id}")
         model.add(dev == weighted_sum - adjusted_target)
-        abs_dev = model.new_int_var(0, 20000, f"absdev_{doc.id}")
+        abs_dev = model.new_int_var(0, 40000, f"absdev_{doc.id}")
         model.add_abs_equality(abs_dev, dev)
         fairness_penalties.append(abs_dev)
 
     wish_bonus = []
     for wish in wishes:
-        if wish.date in day_idx and wish.wish_type == "positive":
+        if wish.date in day_idx and getattr(wish, "wish_type", None) == "positive":
             wish_bonus.append(x[wish.user_id, day_idx[wish.date]])
-        elif wish.date in day_idx and wish.wish_type == "negative" and wish.priority == "soft":
+        elif (wish.date in day_idx
+              and getattr(wish, "wish_type", None) == "negative"
+              and getattr(wish, "priority", None) == "soft"):
             fairness_penalties.append(x[wish.user_id, day_idx[wish.date]])
 
     model.minimize(sum(fairness_penalties) * 10 - sum(wish_bonus))
@@ -114,9 +161,9 @@ def solve_schedule(
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return None
 
-    result = []
-    for doc in doctors:
-        for i, day in enumerate(days):
-            if solver.value(x[doc.id, i]):
-                result.append((doc.id, day))
-    return result
+    return [
+        (doc.id, days[i])
+        for doc in doctors
+        for i in range(n_days)
+        if solver.value(x[doc.id, i])
+    ]

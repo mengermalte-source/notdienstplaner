@@ -205,12 +205,11 @@ async def admin_dashboard(
                 SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id)
         )).all()
 
-        class _SD:
-            def __init__(self, d, w): self.date = d; self.weight = w
+        holiday_dates_dash = {sd.date for sd, cat in sdays_raw}
 
         scores = compute_fairness_score(
             [(a.user_id, a.date) for a in assignments],
-            [_SD(sd.date, cat.weight) for sd, cat in sdays_raw],
+            holiday_dates_dash,
         )
         profiles = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
         for doc in doctors:

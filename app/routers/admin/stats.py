@@ -40,14 +40,9 @@ async def stats_page(request: Request, period_id: Optional[int] = None,
                     SpecialDay.category_id == SpecialDayCategory.id)
             )).all()
 
-            class SDProxy:
-                def __init__(self, d, w):
-                    self.date = d
-                    self.weight = w
-
-            special_days = [SDProxy(sd.date, cat.weight) for sd, cat in sdays_raw]
+            holiday_dates_stats = {sd.date for sd, cat in sdays_raw}
             scores = compute_fairness_score(
-                [(a.user_id, a.date) for a in assignments], special_days)
+                [(a.user_id, a.date) for a in assignments], holiday_dates_stats)
             duty_counts = Counter(a.user_id for a in assignments)
 
     doctors = (await session.exec(

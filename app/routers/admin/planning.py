@@ -19,7 +19,9 @@ from app.models.schedule import PlanStatus, PlanningPeriod, ShiftAssignment
 from app.models.special_day import SpecialDay, SpecialDayCategory
 from app.models.user import DoctorProfile, User, UserRole
 from app.models.wish import WishEntry, WishPriority, WishType
-from app.services.algorithm import solve_schedule
+from types import SimpleNamespace
+from app.models.vacation import VacationPeriod
+from app.services.algorithm import solve_schedule, get_day_weight
 from app.services.fairness import compute_fairness_score, compute_target_duties
 
 router = APIRouter(prefix="/admin/planning", dependencies=[Depends(require_admin)])
@@ -110,7 +112,6 @@ async def create_period(
 @router.post("/{period_id}/run")
 async def run_algorithm(
     period_id: int, request: Request,
-    coverage: str = Form("weekends"),
     session: AsyncSession = Depends(get_session),
     admin: User = Depends(require_admin),
 ):
@@ -122,14 +123,14 @@ async def run_algorithm(
         select(User).where(User.role == UserRole.doctor, User.is_active == True)
     )).all()
 
-    if len(doctors) < settings.doctors_per_day:
+    if len(doctors) < 2:
         periods = (await session.exec(
             select(PlanningPeriod).order_by(PlanningPeriod.year.desc())
         )).all()
         return templates.TemplateResponse("admin/planning.html", {
             "request": request, "user": admin,
             "periods": periods, "period": None, "assignments": [],
-            "error": f"Mindestens {settings.doctors_per_day} aktive Ärzte erforderlich. "
+            "error": f"Mindestens 2 aktive Ärzte erforderlich. "
                      f"Aktuell: {len(doctors)}.",
         })
 
@@ -138,8 +139,10 @@ async def run_algorithm(
     class DoctorWithFactor:
         def __init__(self, user, profile):
             self.id = user.id
-            self.part_time_factor = profile.part_time_factor if profile else 1.0
+            self.credit_factor = profile.credit_factor if profile else 1.0
             self.carried_over_score = profile.carried_over_score if profile else 0.0
+            self.desired_shifts = profile.desired_shifts if profile else None
+            self.day_preference = profile.day_preference if profile else "alle"
 
     doctor_objs = [DoctorWithFactor(u, profiles.get(u.id)) for u in doctors]
 
@@ -152,32 +155,26 @@ async def run_algorithm(
         )
     )).all()
 
-    class SDay:
-        def __init__(self, d, w):
-            self.date = d
-            self.weight = w
+    holiday_dates = {sd.date for sd, _ in sdays_raw}
 
-    special_days = [SDay(sd.date, cat.weight) for sd, cat in sdays_raw]
-    special_dates = {sd.date for sd in special_days}
+    # Urlaubszeiträume laden
+    vacation_periods = (await session.exec(
+        select(VacationPeriod).where(
+            VacationPeriod.user_id.in_([u.id for u in doctors]),
+            VacationPeriod.end_date >= period.start_date,
+            VacationPeriod.start_date <= period.end_date,
+        )
+    )).all()
 
-    # Per-day doctor requirement overrides from special days
-    day_requirements = {
-        sd.date: sd.required_doctors
-        for sd, _ in sdays_raw
-        if sd.required_doctors is not None
-    }
-
+    # Tagesauswahl: Mi, Fr, Sa, So + Feiertage
     all_days = [
         period.start_date + timedelta(days=i)
         for i in range((period.end_date - period.start_date).days + 1)
     ]
-
-    if coverage == "weekends":
-        days = [d for d in all_days if d.weekday() >= 5]
-    elif coverage == "weekends_holidays":
-        days = [d for d in all_days if d.weekday() >= 5 or d in special_dates]
-    else:
-        days = all_days
+    days = [
+        d for d in all_days
+        if d.weekday() in (2, 4, 5, 6) or d in holiday_dates
+    ]
 
     if not days:
         periods = (await session.exec(
@@ -186,7 +183,7 @@ async def run_algorithm(
         return templates.TemplateResponse("admin/planning.html", {
             "request": request, "user": admin,
             "periods": periods, "period": None, "assignments": [],
-            "error": "Keine zu planenden Tage gefunden. Bitte Zeitraum oder Abdeckung prüfen.",
+            "error": "Keine zu planenden Tage gefunden. Bitte Zeitraum prüfen.",
         })
 
     wishes = (await session.exec(
@@ -196,10 +193,22 @@ async def run_algorithm(
         )
     )).all()
 
-    assignments = solve_schedule(
-        doctor_objs, days, wishes, special_days,
-        settings.doctors_per_day, day_requirements=day_requirements,
-    )
+    # Urlaubszeiträume → virtuelle Hard-Wishes
+    days_set = set(days)
+    vac_wishes = []
+    for vp in vacation_periods:
+        cur = vp.start_date
+        while cur <= vp.end_date:
+            if cur in days_set:
+                vac_wishes.append(SimpleNamespace(
+                    user_id=vp.user_id, date=cur,
+                    wish_type="negative", priority="hard",
+                ))
+            cur += timedelta(days=1)
+
+    all_wishes = list(wishes) + vac_wishes
+
+    assignments = solve_schedule(doctor_objs, days, all_wishes, holiday_dates)
 
     if assignments is None:
         periods = (await session.exec(
@@ -209,7 +218,7 @@ async def run_algorithm(
             "request": request, "user": admin,
             "periods": periods, "period": None, "assignments": [],
             "error": f"Kein gültiger Plan gefunden. Ärzte: {len(doctors)}, "
-                     f"Tage: {len(days)}, Abdeckung: {coverage}. "
+                     f"Tage: {len(days)}. "
                      "Bitte Constraints oder Zeitraum prüfen.",
         })
 
@@ -219,13 +228,12 @@ async def run_algorithm(
     for a in old:
         await session.delete(a)
 
-    weight_by_date = {sd.date: sd.weight for sd in special_days}
     for user_id, day in assignments:
         session.add(ShiftAssignment(
             planning_period_id=period_id,
             user_id=user_id,
             date=day,
-            weighted_score=weight_by_date.get(day, 1.0),
+            weighted_score=get_day_weight(day, holiday_dates),
         ))
     await session.commit()
     return RedirectResponse(f"/admin/planning/{period_id}", status_code=302)
@@ -248,7 +256,16 @@ async def period_detail(
         .order_by(ShiftAssignment.date)
     )).all()
     users = {u.id: u for u in (await session.exec(select(User))).all()}
-    scores = compute_fairness_score([(a.user_id, a.date) for a in assignments], [])
+    sdays_raw = (await session.exec(
+        select(SpecialDay, SpecialDayCategory).join(
+            SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id
+        ).where(
+            SpecialDay.date >= period.start_date,
+            SpecialDay.date <= period.end_date,
+        )
+    )).all()
+    holiday_dates = {sd.date for sd, _ in sdays_raw}
+    scores = compute_fairness_score([(a.user_id, a.date) for a in assignments], holiday_dates)
     return templates.TemplateResponse("admin/planning.html", {
         "request": request, "user": admin,
         "period": period, "assignments": assignments,
@@ -475,28 +492,31 @@ async def publish_period(period_id: int, session: AsyncSession = Depends(get_ses
             select(SpecialDay, SpecialDayCategory).join(
                 SpecialDayCategory, SpecialDay.category_id == SpecialDayCategory.id)
         )).all()
-        weight_by_date = {sd.date: cat.weight for sd, cat in sdays_raw}
+        holiday_dates_all = {sd.date for sd, _ in sdays_raw}
 
         doctors_raw = (await session.exec(
             select(User).where(User.role == UserRole.doctor, User.is_active == True)
         )).all()
         profiles_map = {p.user_id: p for p in (await session.exec(select(DoctorProfile))).all()}
 
-        planned_days = len({a.date for a in all_assignments})
+        actual_scores: dict = compute_fairness_score(
+            [(a.user_id, a.date) for a in all_assignments],
+            holiday_dates_all,
+        )
+
         total_factor = sum(
-            profiles_map[u.id].part_time_factor if u.id in profiles_map else 1.0
+            profiles_map[u.id].credit_factor if u.id in profiles_map else 1.0
             for u in doctors_raw
         ) or 1.0
-        total_slots = planned_days * settings.doctors_per_day
-        actual_scores: dict = defaultdict(float)
-        for a in all_assignments:
-            actual_scores[a.user_id] += weight_by_date.get(a.date, 1.0)
+        total_weighted = sum(
+            get_day_weight(a.date, holiday_dates_all) for a in all_assignments
+        )
 
         for u in doctors_raw:
             profile = profiles_map.get(u.id)
             if not profile:
                 continue
-            fair_share = (profile.part_time_factor / total_factor) * total_slots
+            fair_share = (profile.credit_factor / total_factor) * total_weighted
             profile.carried_over_score = round(
                 profile.carried_over_score + (actual_scores.get(u.id, 0.0) - fair_share), 3
             )

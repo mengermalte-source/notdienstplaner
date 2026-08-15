@@ -187,9 +187,10 @@ async def my_stats(request: Request, user: User = Depends(get_current_user),
     all_docs = (await session.exec(
         select(User).where(User.role == UserRole.doctor, User.is_active == True)
     )).all()
+    holiday_dates_doc = {sd.date for sd, cat in sdays_raw}
     all_scores_map = compute_fairness_score(
         [(a.user_id, a.date) for a in (await session.exec(select(ShiftAssignment))).all()],
-        [type("SD", (), {"date": sd.date, "weight": cat.weight})() for sd, cat in sdays_raw]
+        holiday_dates_doc,
     )
     all_score_values = sorted(all_scores_map.values())
     my_score = all_scores_map.get(user.id, 0.0)
