@@ -119,6 +119,32 @@ async def delete_period(period_id: int, session: AsyncSession = Depends(get_sess
 
 
 # ---------------------------------------------------------------------------
+# Reset period (back to draft, delete all assignments)
+# ---------------------------------------------------------------------------
+
+@router.post("/{period_id}/reset")
+async def reset_period(period_id: int, session: AsyncSession = Depends(get_session)):
+    period = await session.get(PlanningPeriod, period_id)
+    if not period:
+        return RedirectResponse("/admin/planning", status_code=302)
+    assignments = (await session.exec(
+        select(ShiftAssignment).where(ShiftAssignment.planning_period_id == period_id)
+    )).all()
+    for a in assignments:
+        await session.delete(a)
+    carryovers = (await session.exec(
+        select(HolidayDutyCarryover).where(HolidayDutyCarryover.planning_period_id == period_id)
+    )).all()
+    for c in carryovers:
+        await session.delete(c)
+    period.status = PlanStatus.draft
+    period.published_at = None
+    session.add(period)
+    await session.commit()
+    return RedirectResponse(f"/admin/planning/{period_id}", status_code=302)
+
+
+# ---------------------------------------------------------------------------
 # Run algorithm
 # ---------------------------------------------------------------------------
 

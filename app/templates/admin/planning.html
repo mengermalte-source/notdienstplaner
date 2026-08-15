@@ -181,6 +181,7 @@
   {% endif %}
 
   <div class="border-t border-gray-100 pt-4 flex flex-wrap gap-3 items-end">
+    {% if period.status != 'published' %}
     <form method="post" action="/admin/planning/{{ period.id }}/run" class="flex flex-wrap items-end gap-2">
       <div>
         <span class="block text-xs font-medium text-gray-500 mb-1">Abdeckung (fest)</span>
@@ -192,10 +193,19 @@
         Plan erstellen
       </button>
     </form>
-    {% if period.status == 'draft' and assignments %}
+    {% if assignments %}
     <form method="post" action="/admin/planning/{{ period.id }}/publish">
       <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm">
         Plan freigeben
+      </button>
+    </form>
+    {% endif %}
+    {% else %}
+    <form method="post" action="/admin/planning/{{ period.id }}/reset"
+          onsubmit="return confirm('Plan wirklich zurücksetzen? Alle Dienste und der Freigabe-Status werden gelöscht.')">
+      <button type="submit"
+              class="bg-white border border-red-300 text-red-600 px-4 py-2 rounded-lg hover:bg-red-50 text-sm">
+        Plan zurücksetzen
       </button>
     </form>
     {% endif %}
