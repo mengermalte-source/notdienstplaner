@@ -96,29 +96,33 @@
 {% if holiday_history %}
 <section class="mt-8">
   <h2 class="text-lg font-semibold text-gray-800 mb-4">Feiertagsdienste (Verlauf)</h2>
-  <table class="w-full text-sm">
-    <thead class="bg-gray-50">
-      <tr>
-        <th class="px-3 py-2 text-left">Arzt</th>
-        <th class="px-3 py-2">Weihnachten</th>
-        <th class="px-3 py-2">Silvester/Neujahr</th>
-        <th class="px-3 py-2">Ostern</th>
-        <th class="px-3 py-2">Pfingsten</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in holiday_history %}
-      <tr class="border-t border-gray-100">
-        <td class="px-3 py-2 font-medium">{{ row.name }}</td>
-        {% for key in ["weihnachten","silvester","ostern","pfingsten"] %}
-        <td class="px-3 py-2 text-center">
-          {% if row[key] %}<span class="text-red-600 font-semibold">✓</span>{% else %}<span class="text-gray-300">–</span>{% endif %}
-        </td>
-        {% endfor %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm min-w-[480px]">
+        <thead class="bg-gray-50 border-b">
+          <tr>
+            <th class="px-4 py-3 text-left">Arzt</th>
+            <th class="px-4 py-3 text-center">Weihnachten</th>
+            <th class="px-4 py-3 text-center">Silvester/Neujahr</th>
+            <th class="px-4 py-3 text-center">Ostern</th>
+            <th class="px-4 py-3 text-center">Pfingsten</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y">
+          {% for row in holiday_history %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 font-medium">{{ row.name }}</td>
+            {% for key in ["weihnachten","silvester","ostern","pfingsten"] %}
+            <td class="px-4 py-3 text-center">
+              {% if row[key] %}<span class="text-red-600 font-semibold">✓</span>{% else %}<span class="text-gray-300">–</span>{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 </section>
 {% endif %}
 {% endblock %}
