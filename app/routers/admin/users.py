@@ -51,7 +51,6 @@ async def toggle_active(user_id: int, session: AsyncSession = Depends(get_sessio
 @router.post("/{user_id}/update-profile")
 async def update_profile(
     user_id: int,
-    part_time_factor: float = Form(1.0),
     credit_factor: float = Form(1.0),
     desired_shifts_raw: str = Form(""),
     day_preference_raw: str = Form("alle"),
