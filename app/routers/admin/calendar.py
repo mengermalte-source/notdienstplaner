@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import date as date_type
 from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -9,15 +10,24 @@ from app.database import get_session
 from app.deps import require_admin
 from app.models.user import User
 from app.models.special_day import SpecialDay, SpecialDayCategory
+from app.models.schedule import PlanningPeriod
 
 router = APIRouter(prefix="/admin/calendar", dependencies=[Depends(require_admin)])
 templates = Jinja2Templates(directory=Path(__file__).parent.parent.parent / "templates")
 
 
 @router.get("", response_class=HTMLResponse)
-async def calendar_page(request: Request, year: int = 2027,
+async def calendar_page(request: Request, year: Optional[int] = None,
                         session: AsyncSession = Depends(get_session),
                         admin: User = Depends(require_admin)):
+    if year is None:
+        pid = request.cookies.get("admin_period_id")
+        if pid and pid.isdigit():
+            period = await session.get(PlanningPeriod, int(pid))
+            year = period.start_date.year if period else date_type.today().year
+        else:
+            year = date_type.today().year
+
     cats = (await session.exec(select(SpecialDayCategory))).all()
     days = (await session.exec(
         select(SpecialDay).where(SpecialDay.date.between(
