@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Kontingent-Transfer{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Kontingent-Transfer</h1>
+
+{% if error %}
+<div class="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+  {{ error }}
+</div>
+{% endif %}
+
+<!-- Info box -->
+<div class="mb-6 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+  <p class="font-semibold mb-1">Wie funktioniert der Kontingent-Transfer?</p>
+  <p>Du kannst einen Teil deines Dienstkontingents dauerhaft an einen Kollegen abtreten. Der Transfer wirkt ab dem nächsten Planungslauf. Sowohl Sender als auch Empfänger können einen angenommenen Transfer widerrufen — der Faktor wird dann zurückgesetzt.</p>
+  {% if my_profile %}
+  <p class="mt-2">Dein aktueller Anrechnungsfaktor: <strong>{{ (my_profile.credit_factor * 100) | round(1) }}%</strong></p>
+  {% endif %}
+</div>
+
+<!-- Section 1: Incoming pending -->
+{% if incoming_pending %}
+<div class="bg-white rounded-lg shadow mb-6 px-5 py-5">
+  <h2 class="text-base font-semibold mb-4 text-amber-700">Eingehende Anträge</h2>
+  <div class="space-y-3">
+    {% for t in incoming_pending %}
+    <div class="border border-amber-200 bg-amber-50 rounded-lg p-4">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-gray-900">
+            <span class="font-semibold">{{ users_map[t.sender_id].full_name if t.sender_id in users_map else '?' }}</span>
+            möchte dir
+            <span class="font-semibold text-amber-700">{{ t.percent | int if t.percent == t.percent | int else t.percent }}%</span>
+            seines Kontingents abgeben
+          </p>
+          {% if t.message %}
+          <p class="text-sm text-gray-600 mt-1">„{{ t.message }}"</p>
+          {% endif %}
+          <p class="text-xs text-gray-400 mt-1">{{ t.created_at.strftime('%d.%m.%Y') }}</p>
+        </div>
+        <span class="flex-shrink-0 text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-700">Offen</span>
+      </div>
+      <div class="flex gap-2 mt-3">
+        <form method="post" action="/me/transfers/{{ t.id }}/accept">
+          <button type="submit"
+                  class="text-sm bg-primary-600 text-white px-4 py-1.5 rounded-lg hover:bg-primary-700 font-medium">
+            Annehmen
+          </button>
+        </form>
+        <form method="post" action="/me/transfers/{{ t.id }}/reject">
+          <button type="submit"
+                  class="text-sm bg-white border border-gray-300 text-gray-700 px-4 py-1.5 rounded-lg hover:bg-gray-50">
+            Ablehnen
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Section 2: Active transfers -->
+{% if active %}
+<div class="bg-white rounded-lg shadow mb-6 px-5 py-5">
+  <h2 class="text-base font-semibold mb-4">Aktive Transfers</h2>
+  <div class="space-y-2">
+    {% for t in active %}
+    <div class="border border-gray-200 rounded-lg p-4 flex items-start justify-between gap-3">
+      <div class="min-w-0 flex-1">
+        <p class="text-sm text-gray-900">
+          {% if t.sender_id == user.id %}
+            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 mr-1">Gesendet an</span>
+            <span class="font-medium">{{ users_map[t.receiver_id].full_name if t.receiver_id in users_map else '?' }}</span>
+          {% else %}
+            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 mr-1">Empfangen von</span>
+            <span class="font-medium">{{ users_map[t.sender_id].full_name if t.sender_id in users_map else '?' }}</span>
+          {% endif %}
+          <span class="ml-2 font-semibold text-primary-700">
+            {{ t.percent | int if t.percent == t.percent | int else t.percent }}%
+          </span>
+        </p>
+        <p class="text-xs text-gray-400 mt-0.5">
+          Angenommen am {{ t.resolved_at.strftime('%d.%m.%Y') if t.resolved_at else '?' }}
+        </p>
+      </div>
+      <form method="post" action="/me/transfers/{{ t.id }}/revoke">
+        <button type="submit"
+                class="flex-shrink-0 text-xs text-red-600 border border-red-200 bg-red-50 px-3 py-1.5 rounded-lg hover:bg-red-100">
+          Widerrufen
+        </button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Section 3: Send new request -->
+<div class="bg-white rounded-lg shadow px-5 py-5">
+  <h2 class="text-base font-semibold mb-4">Antrag senden</h2>
+  <form method="post" action="/me/transfers" class="space-y-4">
+
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+        Empfänger
+      </label>
+      <select name="receiver_id" required
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white text-sm">
+        <option value="">Arzt auswählen …</option>
+        {% for doc in all_doctors %}
+        {% if doc.id != user.id %}
+        <option value="{{ doc.id }}">{{ doc.full_name }}</option>
+        {% endif %}
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+        Prozent des Kontingents (1–100)
+      </label>
+      <div class="flex items-center gap-2">
+        <input type="number" name="percent" min="1" max="100" step="1" required
+               placeholder="z.B. 20"
+               class="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        <span class="text-sm text-gray-500">%</span>
+      </div>
+      {% if my_profile %}
+      <p class="text-xs text-gray-400 mt-1">
+        Dein aktueller Faktor: {{ (my_profile.credit_factor * 100) | round(1) }}%.
+        Du kannst bis zu {{ (my_profile.credit_factor * 100) | round(1) }}% abgeben.
+      </p>
+      {% endif %}
+    </div>
+
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+        Nachricht (optional)
+      </label>
+      <input type="text" name="message" placeholder="z.B. Elternzeit, Teilzeit-Vereinbarung …"
+             class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+    </div>
+
+    <button type="submit"
+            class="bg-accent-500 text-white px-6 py-2 rounded-lg hover:bg-accent-700 text-sm font-medium">
+      Antrag senden
+    </button>
+  </form>
+</div>
+
+<!-- Past transfers -->
+{% set past = transfers | selectattr('status', 'in', ['rejected', 'revoked']) | list %}
+{% if past %}
+<div class="mt-6">
+  <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Abgeschlossene Anträge</h2>
+  <div class="space-y-2">
+    {% for t in past %}
+    <div class="bg-white border border-gray-100 rounded-lg p-3 flex items-center justify-between gap-3">
+      <p class="text-sm text-gray-600">
+        {% if t.sender_id == user.id %}
+          An {{ users_map[t.receiver_id].full_name if t.receiver_id in users_map else '?' }}
+        {% else %}
+          Von {{ users_map[t.sender_id].full_name if t.sender_id in users_map else '?' }}
+        {% endif %}
+        — {{ t.percent | int if t.percent == t.percent | int else t.percent }}%
+      </p>
+      <span class="flex-shrink-0 text-xs px-2 py-1 rounded-full
+        {% if t.status.value == 'rejected' %}bg-red-100 text-red-700
+        {% else %}bg-gray-100 text-gray-500{% endif %}">
+        {% if t.status.value == 'rejected' %}Abgelehnt
+        {% else %}Widerrufen{% endif %}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

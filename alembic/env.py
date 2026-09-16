@@ -15,6 +15,7 @@ import app.models.special_day
 import app.models.schedule
 import app.models.swap
 import app.models.vacation
+import app.models.contingent_transfer
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

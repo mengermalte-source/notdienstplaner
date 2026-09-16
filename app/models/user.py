@@ -32,7 +32,7 @@ class User(SQLModel, table=True):
 class DoctorProfile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", unique=True)
-    credit_factor: float = Field(default=1.0, ge=0.0, le=1.0)     # Anrechnungsfaktor
+    credit_factor: float = Field(default=1.0, ge=0.0)              # Anrechnungsfaktor
     desired_shifts: Optional[int] = Field(default=None, ge=0)      # None = Minimum
     day_preference: DayPreference = Field(default=DayPreference.alle)  # Tages-Präferenz
     sub_carried_over_score: float = Field(default=0.0)             # Bereitschafts-Fairness

@@ -15,11 +15,13 @@ from app.routers.admin.calendar import router as calendar_router
 from app.routers.admin.planning import router as planning_router
 from app.routers.admin.stats import router as stats_router
 from app.routers.admin.users import router as users_router
+from app.routers.contingent_transfer import router as contingent_transfer_router
 from app.deps import require_admin
 from app.models.user import User
 from app.models.vacation import VacationPeriod  # noqa: F401
 from app.models.holiday_carryover import HolidayDutyCarryover  # noqa: F401
 from app.models.recurring_block import RecurringBlock  # noqa: F401
+from app.models.contingent_transfer import ContingentTransfer  # noqa: F401
 
 
 @asynccontextmanager
@@ -147,6 +149,7 @@ app.include_router(calendar_router)
 app.include_router(planning_router)
 app.include_router(stats_router)
 app.include_router(users_router)
+app.include_router(contingent_transfer_router)
 
 
 @app.exception_handler(HTTPException)
