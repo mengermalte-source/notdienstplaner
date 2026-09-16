@@ -78,6 +78,14 @@
           <li class="text-xs text-red-400 italic">… und {{ check.error_count - (check.errors | length) }} weitere</li>
           {% endif %}
         </ul>
+        {% elif check.passed and check.errors %}
+        <ul class="mt-2 space-y-0.5">
+          {% for err in check.errors %}
+          <li class="text-sm text-blue-700 flex items-start gap-1.5">
+            <span class="text-blue-400 mt-0.5 flex-shrink-0">›</span>{{ err }}
+          </li>
+          {% endfor %}
+        </ul>
         {% endif %}
       </div>
       <!-- Badge -->

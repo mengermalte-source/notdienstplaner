@@ -22,7 +22,7 @@ from app.models.wish import WishEntry, WishPriority, WishType
 from app.models.special_day import SpecialDay
 from types import SimpleNamespace
 from app.models.vacation import VacationPeriod
-from app.services.algorithm import solve_schedule, solve_substitute_schedule, get_day_weight, get_day_coverage
+from app.services.algorithm import solve_schedule, solve_substitute_schedule, get_day_weight, get_day_coverage, _compute_targets
 from app.services.fairness import compute_fairness_score, compute_target_duties
 from app.models.swap import SwapRequest, SwapStatus
 
@@ -660,21 +660,6 @@ async def period_calendar(
 # QS — Qualitätssicherung (shared logic)
 # ---------------------------------------------------------------------------
 
-def _qa_compute_targets(doctors: list, service_days: list, holiday_dates: set) -> dict:
-    total_slots = sum(get_day_coverage(d, holiday_dates) for d in service_days)
-    fixed = [doc for doc in doctors if doc.desired_shifts is not None]
-    flex = [doc for doc in doctors if doc.desired_shifts is None]
-    fixed_claimed = sum(doc.desired_shifts for doc in fixed)
-    flex_slots = max(0, total_slots - fixed_claimed)
-    total_flex_credit = sum(doc.credit_factor for doc in flex) or 1.0
-    targets: dict = {}
-    for doc in fixed:
-        targets[doc.id] = float(doc.desired_shifts)
-    for doc in flex:
-        targets[doc.id] = (doc.credit_factor / total_flex_credit) * flex_slots
-    return targets
-
-
 def _run_qa_checks(assignments: list, period, doctors: list, profiles_map: dict,
                    wishes: list, vacations: list, recurring_blocks=None) -> list[dict]:
     from collections import Counter
@@ -705,7 +690,7 @@ def _run_qa_checks(assignments: list, period, doctors: list, profiles_map: dict,
             self.day_preference = str(profile.day_preference) if profile else "alle"
 
     doc_objs = [_Doc(d, profiles_map.get(d.id)) for d in doctors]
-    targets = _qa_compute_targets(doc_objs, service_days, holiday_dates)
+    targets = _compute_targets(doc_objs, service_days, holiday_dates)
 
     hard_negative = {
         (w.user_id, w.date) for w in wishes
@@ -919,6 +904,28 @@ def _run_qa_checks(assignments: list, period, doctors: list, profiles_map: dict,
         "passed": not holiday_errors,
         "errors": holiday_errors,
         "error_count": len(holiday_errors),
+    })
+
+    # 12. Wunschzahl unter Minimum → Minimum wurde angewendet (informativ)
+    total_slots_count = sum(get_day_coverage(d, holiday_dates) for d in service_days)
+    total_credit_all = sum(doc.credit_factor for doc in doc_objs) or 1.0
+    minimum_override_info = []
+    for doc in doc_objs:
+        ds = doc.desired_shifts
+        if ds is not None and ds > 0:
+            fair_share_val = (doc.credit_factor / total_credit_all) * total_slots_count
+            if ds < fair_share_val:
+                name = users_map[doc.id].full_name if doc.id in users_map else f"Arzt {doc.id}"
+                minimum_override_info.append(
+                    f"{name}: Wunsch {ds} < Minimum {fair_share_val:.1f} → Minimum wird angewendet"
+                )
+    checks.append({
+        "id": "test_minimum_rule_applied",
+        "name": "Wunschzahl-Minimum-Regel (informativ)",
+        "detail": "Aerzte, deren Wunschzahl unter dem proportionalen Minimum liegt, erhalten das Minimum",
+        "passed": True,
+        "errors": minimum_override_info,
+        "error_count": len(minimum_override_info),
     })
 
     return checks
