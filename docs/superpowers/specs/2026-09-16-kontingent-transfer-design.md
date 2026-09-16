@@ -57,9 +57,9 @@ Der `credit_factor` wird in `DoctorProfile` direkt geändert. Da der Algorithmus
 ## Validierung
 
 - `sender != receiver`
-- `percent` liegt in `(0.0, 50.0]` (max. 50 Prozentpunkte pro Transfer)
-- Nach Transfer: `sender.credit_factor - percent/100 >= 0.05` (Sender behält Mindestanteil)
-- Nach Transfer: `receiver.credit_factor + percent/100 <= 2.0` (Empfänger kann Mehrarbeit annehmen)
+- `percent` liegt in `(0.0, 100.0]` (max. 100 Prozentpunkte pro Transfer)
+- Nach Transfer: `sender.credit_factor - percent/100 >= 0.0` (Sender kann alles abgeben und aus der Planung herausfallen)
+- Keine Obergrenze für den Empfänger — `credit_factor` darf über 1.0 steigen
 - Sender darf nur senden, wenn kein anderer offener (`pending`) Transfer an dieselbe Person existiert
 
 ---
