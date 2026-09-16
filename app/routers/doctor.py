@@ -16,7 +16,7 @@ from app.models.schedule import ShiftAssignment, PlanningPeriod, PlanStatus
 from app.services.auth import hash_password, verify_password
 from app.services.ical import build_ical
 from app.services.fairness import compute_fairness_score
-from app.services.algorithm import get_day_weight
+from app.services.algorithm import get_day_weight, get_day_coverage
 
 router = APIRouter(prefix="/me")
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
@@ -56,11 +56,42 @@ async def wishes_page(request: Request, user: User = Depends(get_current_user),
         select(RecurringBlock).where(RecurringBlock.user_id == user.id)
         .order_by(RecurringBlock.month, RecurringBlock.day)
     )).all()
+
+    # Proportionalen Mindestanteil für die nächste/aktuelle Planungsperiode berechnen
+    minimum_info: dict | None = None
+    today = date_type.today()
+    next_period = (await session.exec(
+        select(PlanningPeriod)
+        .where(PlanningPeriod.end_date >= today)
+        .order_by(PlanningPeriod.start_date)
+    )).first()
+    if next_period:
+        import holidays as hol_lib
+        from datetime import timedelta
+        years = {next_period.start_date.year, next_period.end_date.year}
+        holiday_dates = {d for d in hol_lib.Germany(state="BY", years=years)
+                         if next_period.start_date <= d <= next_period.end_date}
+        all_days = [next_period.start_date + timedelta(days=i)
+                    for i in range((next_period.end_date - next_period.start_date).days + 1)]
+        service_days = [d for d in all_days if d.weekday() in (2, 4, 5, 6) or d in holiday_dates]
+        total_slots = sum(get_day_coverage(d, holiday_dates) for d in service_days)
+
+        all_profiles = (await session.exec(
+            select(DoctorProfile)
+            .join(User, DoctorProfile.user_id == User.id)
+            .where(User.is_active == True, User.role == UserRole.doctor)
+        )).all()
+        total_credit = sum(p.credit_factor for p in all_profiles) or 1.0
+        my_credit = profile.credit_factor if profile else 1.0
+        fair_share = round((my_credit / total_credit) * total_slots, 1)
+        minimum_info = {"period": next_period, "fair_share": fair_share}
+
     return templates.TemplateResponse("doctor/wishes.html",
         {"request": request, "user": user, "wishes": wishes,
          "wish_types": WishType, "priorities": WishPriority,
          "vacations": vacations, "profile": profile,
-         "recurring_blocks": recurring_blocks})
+         "recurring_blocks": recurring_blocks,
+         "minimum_info": minimum_info})
 
 
 @router.post("/desired-shifts")

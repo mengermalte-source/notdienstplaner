@@ -287,10 +287,23 @@
           Wie viele Dienste möchtest du pro 6-Monats-Periode übernehmen?
           Leer lassen, um automatisch den proportionalen Mindestanteil zu erhalten.
         </p>
-        <div class="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 mb-4 text-sm text-blue-800 space-y-1">
-          <p><strong>Regel:</strong> Nur Wünsche <em>über</em> dem proportionalen Mindestanteil werden berücksichtigt.</p>
-          <p>Wer weniger oder nichts einträgt, erhält automatisch denselben Anteil wie alle ohne konkreten Wunsch.</p>
+        {% if minimum_info %}
+        <div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-4">
+          <p class="text-sm font-semibold text-amber-900">
+            Dein Mindestanteil für „{{ minimum_info.period.name }}":
+            <span class="text-lg ml-1">{{ minimum_info.fair_share }} Dienste</span>
+          </p>
+          <p class="text-xs text-amber-700 mt-1">
+            Nur ein Wunsch <em>über</em> diesem Wert wird berücksichtigt.
+            Gibst du weniger oder nichts an, erhältst du automatisch diesen Anteil.
+          </p>
         </div>
+        {% else %}
+        <div class="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 mb-4 text-sm text-blue-800">
+          <p><strong>Regel:</strong> Nur Wünsche <em>über</em> dem proportionalen Mindestanteil werden berücksichtigt.
+          Wer weniger oder nichts einträgt, erhält automatisch das Minimum.</p>
+        </div>
+        {% endif %}
         <form method="post" action="/me/desired-shifts" class="flex flex-wrap items-end gap-3">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Anzahl Dienste</label>
