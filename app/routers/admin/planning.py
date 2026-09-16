@@ -1093,15 +1093,40 @@ async def publish_period(period_id: int, session: AsyncSession = Depends(get_ses
             [(a.user_id, a.date) for a in primary_assignments],
             holiday_dates_all,
         )
-        total_factor = sum(
-            profiles_map[u.id].credit_factor if u.id in profiles_map else 1.0
-            for u in doctors_raw
-        ) or 1.0
         total_weighted = sum(
             get_day_weight(a.date, holiday_dates_all) for a in primary_assignments
         )
 
-        # Substitute fairness carryover (sub_carried_over_score)
+        # Individuellen Target-Anteil pro Arzt berechnen (inkl. Mehrwunsch-Ärzte).
+        # Basis für den Übertrag ist das, was der Arzt laut Planung bekommen SOLLTE —
+        # nicht der rein proportionale Anteil. So werden Mehrwunsch-Ärzte nicht für
+        # ihre freiwillig übernommenen Extradienste in der Folgeperiode bestraft.
+        all_days_pub = [
+            period.start_date + timedelta(days=i)
+            for i in range((period.end_date - period.start_date).days + 1)
+        ]
+        service_days_pub = [
+            d for d in all_days_pub
+            if d.weekday() in (2, 4, 5, 6) or d in holiday_dates_all
+        ]
+        total_slots_pub = sum(get_day_coverage(d, holiday_dates_all) for d in service_days_pub)
+        total_weighted_slots_pub = sum(
+            get_day_weight(d, holiday_dates_all) * get_day_coverage(d, holiday_dates_all)
+            for d in service_days_pub
+        )
+        avg_weight_pub = total_weighted_slots_pub / total_slots_pub if total_slots_pub > 0 else 1.0
+
+        class _PubDoc:
+            def __init__(self, u, p):
+                self.id = u.id
+                self.credit_factor = p.credit_factor if p else 1.0
+                self.desired_shifts = p.desired_shifts if p else None
+
+        pub_docs = [_PubDoc(u, profiles_map.get(u.id)) for u in doctors_raw]
+        targets_pub = _compute_targets(pub_docs, service_days_pub, holiday_dates_all)
+
+        # Substitute fairness carryover (sub_carried_over_score) — bleibt proportional,
+        # da Bereitschaftsdienste kein desired_shifts kennen.
         sub_scores: dict = compute_fairness_score(
             [(a.user_id, a.date) for a in sub_assignments],
             holiday_dates_all,
@@ -1109,14 +1134,18 @@ async def publish_period(period_id: int, session: AsyncSession = Depends(get_ses
         total_sub_weighted = sum(
             get_day_weight(a.date, holiday_dates_all) for a in sub_assignments
         )
+        total_factor = sum(
+            profiles_map[u.id].credit_factor if u.id in profiles_map else 1.0
+            for u in doctors_raw
+        ) or 1.0
 
         for u in doctors_raw:
             profile = profiles_map.get(u.id)
             if not profile:
                 continue
-            fair_share = (profile.credit_factor / total_factor) * total_weighted
+            target_weighted = targets_pub.get(u.id, 0.0) * avg_weight_pub
             profile.carried_over_score = round(
-                profile.carried_over_score + (actual_scores.get(u.id, 0.0) - fair_share), 3
+                profile.carried_over_score + (actual_scores.get(u.id, 0.0) - target_weighted), 3
             )
             sub_fair_share = (profile.credit_factor / total_factor) * total_sub_weighted
             profile.sub_carried_over_score = round(
