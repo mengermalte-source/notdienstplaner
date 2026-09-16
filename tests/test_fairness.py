@@ -196,19 +196,19 @@ def test_lower_bound_respected():
 # desired_shifts
 # ---------------------------------------------------------------------------
 
-def test_desired_shifts_approximately_honored():
-    """A doctor with desired_shifts=8 should receive exactly 8 shifts (hard target)."""
+def test_desired_shifts_above_minimum_honored():
+    """A doctor with desired_shifts=15 (above fair_share ~13) should receive ~15 shifts."""
     days = quarter_days()
     flex = make_doctors(5)
-    fixed = make_doctor(6, desired_shifts=8)
+    fixed = make_doctor(6, desired_shifts=15)  # fair_share = 78/6 ≈ 13; 15 > 13 → honored
     doctors = flex + [fixed]
     result = solve_schedule(doctors, days, wishes=[], holiday_dates=set())
     assert result is not None
     from collections import Counter
     count = Counter(uid for uid, _ in result)
     got = count.get(fixed.id, 0)
-    # Bounds: int(8 * 0.70) = 5 lower, int(8 * 1.15)+2 = 11 upper
-    assert 5 <= got <= 11, f"desired_shifts=8 doctor got {got} shifts"
+    # Bounds: int(15 * 0.70) = 10 lower, int(15 * 1.15)+2 = 19 upper
+    assert 10 <= got <= 19, f"desired_shifts=15 doctor got {got} shifts"
 
 
 # ---------------------------------------------------------------------------
@@ -375,10 +375,10 @@ def test_desired_shifts_zero_gets_no_shifts():
 
 
 def test_desired_shifts_two_fixed_doctors_both_honored():
-    """Zwei Ärzte mit festen Wünschen werden beide innerhalb ihrer Schranken eingeplant."""
-    days = quarter_days()   # ~78 Slots
-    fixed_a = make_doctor(10, desired_shifts=6)
-    fixed_b = make_doctor(11, desired_shifts=12)
+    """Zwei Ärzte mit desired_shifts über dem Minimum werden beide innerhalb ihrer Schranken eingeplant."""
+    days = quarter_days()   # ~78 Slots; fair_share ≈ 78/6 = 13
+    fixed_a = make_doctor(10, desired_shifts=15)  # 15 > 13 → honored
+    fixed_b = make_doctor(11, desired_shifts=20)  # 20 > 13 → honored
     flex = make_doctors(4)
     doctors = flex + [fixed_a, fixed_b]
     result = solve_schedule(doctors, days, wishes=[], holiday_dates=set())
@@ -386,7 +386,7 @@ def test_desired_shifts_two_fixed_doctors_both_honored():
     from collections import Counter
     counts = Counter(uid for uid, _ in result)
     # Bounds: lower = int(target * 0.70), upper = int(target * 1.15) + 2
-    for doc, target in [(fixed_a, 6), (fixed_b, 12)]:
+    for doc, target in [(fixed_a, 15), (fixed_b, 20)]:
         got = counts.get(doc.id, 0)
         assert int(target * 0.70) <= got <= int(target * 1.15) + 2, (
             f"Arzt {doc.id} (desired={target}) hat {got} Dienste"
@@ -412,24 +412,21 @@ def test_desired_shifts_overrides_credit_factor():
     )
 
 
-def test_desired_shifts_below_credit_share_reduces_duties():
-    """Ein Arzt mit desired_shifts weit unter seiner anteiligen Quote bekommt
-    weniger Dienste als ein gleich-CF-Kollege ohne festen Wunsch."""
-    days = quarter_days()  # ~78 Slots
-    # Vollzeit-Arzt, möchte aber nur 3 Dienste
+def test_desired_shifts_below_minimum_gets_at_least_minimum():
+    """Ein Arzt mit desired_shifts unter dem proportionalen Minimum bekommt mindestens das Minimum."""
+    days = quarter_days()  # ~78 Slots; fair_share = 78/6 ≈ 13
+    # Vollzeit-Arzt wünscht nur 3 Dienste — liegt unter Minimum → wird ignoriert
     low_wish = make_doctor(7, credit_factor=1.0, desired_shifts=3)
-    normal = make_doctor(8, credit_factor=1.0, desired_shifts=None)
-    flex = make_doctors(4)
-    doctors = flex + [low_wish, normal]
+    flex = make_doctors(5)
+    doctors = flex + [low_wish]
     result = solve_schedule(doctors, days, wishes=[], holiday_dates=set())
     assert result is not None
     from collections import Counter
     counts = Counter(uid for uid, _ in result)
     low_got = counts.get(low_wish.id, 0)
-    normal_got = counts.get(normal.id, 0)
-    assert low_got < normal_got, (
-        f"Arzt mit desired_shifts=3 ({low_got}) sollte weniger als "
-        f"flex-Kollege ({normal_got}) bekommen"
+    # Proportionales Minimum ≈ 13; 70 % davon = 9
+    assert low_got >= 9, (
+        f"Arzt mit desired_shifts=3 (unter Minimum) sollte ≥ 9 Dienste bekommen, hat {low_got}"
     )
 
 

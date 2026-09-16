@@ -30,13 +30,29 @@ def _compute_targets(
 ) -> dict[int, float]:
     """
     Zweiphasige Zielberechnung:
-    1. Ärzte mit desired_shifts bekommen ihren Wunschwert als Ziel.
-    2. Restslots werden proportional zu credit_factor auf Minimum-Ärzte verteilt.
+    1. Ärzte mit desired_shifts >= ihrem proportionalen Minimum bekommen ihren Wunschwert.
+    2. Alle anderen (kein desired_shifts oder Wunsch unter Minimum) erhalten den Proportionalanteil.
     """
     total_slots = sum(get_day_coverage(d, holiday_dates, special_day_overrides) for d in days)
 
-    fixed = [doc for doc in doctors if getattr(doc, "desired_shifts", None) is not None]
-    flex = [doc for doc in doctors if getattr(doc, "desired_shifts", None) is None]
+    total_credit = sum(
+        getattr(doc, "credit_factor", getattr(doc, "part_time_factor", 1.0))
+        for doc in doctors
+    ) or 1.0
+
+    def fair_share(doc) -> float:
+        cf = getattr(doc, "credit_factor", getattr(doc, "part_time_factor", 1.0))
+        return (cf / total_credit) * total_slots
+
+    # desired_shifts=0 → explizit ausgeschlossen (wird immer geehrt)
+    # desired_shifts>=1 → wird nur geehrt, wenn >= dem proportionalen Minimum
+    fixed = [
+        doc for doc in doctors
+        if getattr(doc, "desired_shifts", None) is not None
+        and (doc.desired_shifts == 0 or doc.desired_shifts >= fair_share(doc))
+    ]
+    fixed_ids = {doc.id for doc in fixed}
+    flex = [doc for doc in doctors if doc.id not in fixed_ids]
 
     fixed_claimed = sum(doc.desired_shifts for doc in fixed)
     flex_slots = max(0, total_slots - fixed_claimed)

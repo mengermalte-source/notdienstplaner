@@ -1,6 +1,6 @@
 import pytest
 from datetime import date, timedelta
-from app.services.algorithm import solve_schedule, get_day_coverage, get_day_weight
+from app.services.algorithm import solve_schedule, get_day_coverage, get_day_weight, _compute_targets
 from app.services.fairness import compute_fairness_score
 
 
@@ -221,3 +221,41 @@ def test_soft_negative_wish_avoided():
     result = solve_schedule(doctors, [wed], wishes=[W()], holiday_dates=set())
     assert result is not None
     assert all(uid != 1 for uid, _ in result), "Arzt mit 'Lieber nicht' sollte nicht eingeplant werden"
+
+
+# ---------------------------------------------------------------------------
+# _compute_targets: desired_shifts unter dem proportionalen Minimum
+# ---------------------------------------------------------------------------
+
+def make_doctor(id, credit_factor=1.0, desired_shifts=None):
+    class D:
+        pass
+    d = D()
+    d.id = id
+    d.credit_factor = credit_factor
+    d.desired_shifts = desired_shifts
+    return d
+
+
+def test_desired_shifts_below_minimum_treated_as_flex():
+    """desired_shifts unter dem proportionalen Minimum wird ignoriert — Arzt erhält das Minimum."""
+    # 4 gleiche Ärzte, 4 Samstage → 8 Slots → Proportionalanteil = 2 pro Arzt
+    # Arzt 1 wünscht 1 Dienst (unter dem Minimum von 2) → soll Ziel 2 bekommen
+    days = [date(2027, 1, 9) + timedelta(weeks=i) for i in range(4)]  # 4 Samstage
+    doctors = [make_doctor(1, desired_shifts=1), make_doctor(2), make_doctor(3), make_doctor(4)]
+
+    targets = _compute_targets(doctors, days, holiday_dates=set())
+
+    assert targets[1] >= 2.0, f"Arzt 1 hat desired_shifts=1 < Minimum 2, erwartet Ziel ≥ 2, bekam {targets[1]}"
+
+
+def test_desired_shifts_above_minimum_honored():
+    """desired_shifts über dem proportionalen Minimum wird weiterhin berücksichtigt."""
+    # 4 Samstage = 8 Slots, 4 Ärzte → Proportional = 2
+    # Arzt 1 wünscht 3 (über Minimum) → soll Ziel 3 behalten
+    days = [date(2027, 1, 9) + timedelta(weeks=i) for i in range(4)]
+    doctors = [make_doctor(1, desired_shifts=3), make_doctor(2), make_doctor(3), make_doctor(4)]
+
+    targets = _compute_targets(doctors, days, holiday_dates=set())
+
+    assert targets[1] == 3.0
