@@ -38,7 +38,8 @@
         <p class="font-semibold mb-1">Optimierungsziele (bestmöglich):</p>
         <ul class="space-y-1 text-primary-800">
           <li>• <strong>Fairness:</strong> Verteilung proportional zum <strong>Anrechnungsfaktor</strong>; Freitag zählt halb so viel wie Mi/Sa/So/FT</li>
-          <li>• Ärzte mit <strong>Wunschanzahl</strong> erhalten diese zuerst; verbleibende Slots werden proportional verteilt</li>
+          <li>• Ärzte mit <strong>Wunschanzahl über dem Minimum</strong> erhalten diese zuerst; verbleibende Slots gehen an alle ohne Mehrwunsch</li>
+          <li>• Wünsche <em>unter</em> dem proportionalen Mindestanteil werden ignoriert — der Arzt erhält automatisch das Minimum wie alle ohne konkreten Wunsch</li>
           <li>• <strong>„Lieber nicht"</strong>-Wünsche werden möglichst vermieden (Gewicht 10)</li>
           <li>• <strong>„Möchte gerne"</strong>-Wünsche werden bevorzugt berücksichtigt</li>
           <li>• <strong>Übertrag:</strong> Mehr-/Minderdienste (gewichtet) aus der Vorperiode fließen in die Zielberechnung der nächsten Periode ein</li>

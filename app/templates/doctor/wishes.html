@@ -283,10 +283,14 @@
 
       <div class="bg-white rounded-xl border border-gray-200 p-5">
         <h2 class="text-sm font-semibold text-gray-800 mb-1">Gewünschte Dienstanzahl</h2>
-        <p class="text-sm text-gray-500 mb-4">
+        <p class="text-sm text-gray-500 mb-3">
           Wie viele Dienste möchtest du pro 6-Monats-Periode übernehmen?
-          Leer lassen, damit der Algorithmus die Anzahl proportional zu deinem Stellenumfang berechnet.
+          Leer lassen, um automatisch den proportionalen Mindestanteil zu erhalten.
         </p>
+        <div class="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 mb-4 text-sm text-blue-800 space-y-1">
+          <p><strong>Regel:</strong> Nur Wünsche <em>über</em> dem proportionalen Mindestanteil werden berücksichtigt.</p>
+          <p>Wer weniger oder nichts einträgt, erhält automatisch denselben Anteil wie alle ohne konkreten Wunsch.</p>
+        </div>
         <form method="post" action="/me/desired-shifts" class="flex flex-wrap items-end gap-3">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Anzahl Dienste</label>
