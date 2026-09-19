@@ -1160,6 +1160,37 @@ def test_fairness_score():
     special_days = [SD(date(2027,1,1), 3.0)]
     scores = compute_fairness_score(assignments, special_days)
     assert scores[1] > scores[2]  # Arzt 1 hat Sonderbelastung
+
+def test_holiday_cluster_max_one_shift():
+    """Kein Arzt darf in Weihnachts-/Silvester-/Oster-/Pfingstcluster mehr als einen Dienst haben."""
+    doctors = make_doctors(3)
+    # Weihnachtscluster: 24., 25., 26. Dez.
+    days = [date(2027, 12, 24), date(2027, 12, 25), date(2027, 12, 26)]
+    result = solve_schedule(doctors, days, wishes=[], special_days=[], doctors_per_day=1)
+    assert result is not None
+    from collections import Counter
+    count = Counter(uid for uid, _ in result)
+    for uid, n in count.items():
+        assert n <= 1, f"Arzt {uid} hat {n} Dienste im Weihnachtscluster"
+
+def test_holiday_cluster_allows_two_if_positive_wish():
+    """Wenn Arzt 2+ positive Wünsche im Cluster hat, darf er dort 2 Dienste übernehmen."""
+    doctors = make_doctors(3)
+    days = [date(2027, 12, 24), date(2027, 12, 25), date(2027, 12, 26)]
+    class W:
+        def __init__(self, uid, d): self.user_id = uid; self.date = d; self.wish_type = "positive"; self.priority = "soft"
+    # Arzt 1 möchte Heiligabend UND 1. Weihnachtstag
+    wishes = [W(1, date(2027, 12, 24)), W(1, date(2027, 12, 25))]
+    result = solve_schedule(doctors, days, wishes=wishes, special_days=[], doctors_per_day=1)
+    assert result is not None
+    from collections import Counter
+    count = Counter(uid for uid, _ in result)
+    # Arzt 1 darf 2 bekommen, andere weiterhin max 1
+    for uid, n in count.items():
+        if uid == 1:
+            pass  # bis zu 2 erlaubt
+        else:
+            assert n <= 1
 ```
 
 - [ ] **Step 2: Tests laufen lassen — müssen fehlschlagen**
@@ -1236,6 +1267,68 @@ def solve_schedule(
     for wish in wishes:
         if wish.wish_type == "negative" and wish.priority == "hard" and wish.date in day_idx:
             model.add(x[wish.user_id, day_idx[wish.date]] == 0)
+
+    # Constraint: Feiertagscluster — max. 1 Dienst pro Cluster pro Arzt,
+    # außer der Arzt hat für ≥2 Tage im Cluster einen positiven Wunsch.
+    # Cluster werden anhand der special_day-Kategorien gebildet: Alle SpecialDay-
+    # Objekte, deren .date im Planungszeitraum liegt und die zur gleichen Kategorie
+    # (cluster_key) gehören, bilden einen Cluster. Als cluster_key wird dabei der
+    # Feiertags-Name ohne Jahreszusatz verwendet (z. B. "Weihnachten", "Ostern",
+    # "Pfingsten", "Silvester/Neujahr"). Alternativ können die Cluster auch fest
+    # über python-holidays-Datum-Logik berechnet werden (see holidays.py).
+    #
+    # Implementierung: cluster_days = dict[str, list[int]] (cluster_key → day-indices)
+    # Positive-Wunsch-Zählung pro (user_id, cluster_key) bestimmt das erlaubte Maximum.
+    from collections import defaultdict
+
+    # Feste Cluster-Definitionen: Datumsfunktion → cluster_key
+    # (Weihnachten, Silvester/Neujahr fix; Ostern/Pfingsten via python-holidays)
+    import holidays as _hol
+
+    def _build_holiday_clusters(days: list[date]) -> dict[str, list[date]]:
+        years = {d.year for d in days}
+        cluster_map: dict[date, str] = {}
+        for year in years:
+            by = _hol.Germany(state="BY", years=year)
+            for d, name in by.items():
+                if "Weihnacht" in name or d.month == 12 and d.day == 24:
+                    cluster_map[d] = "Weihnachten"
+                elif "Silvester" in name or (d.month == 12 and d.day == 31):
+                    cluster_map[d] = "Silvester/Neujahr"
+                elif "Neujahr" in name or (d.month == 1 and d.day == 1):
+                    cluster_map[d] = "Silvester/Neujahr"
+                elif "Karfreitag" in name or "Ostersonntag" in name or "Ostermontag" in name or "Oster" in name:
+                    cluster_map[d] = "Ostern"
+                elif "Pfingst" in name:
+                    cluster_map[d] = "Pfingsten"
+            # Heiligabend (24.12.) ist kein gesetzlicher Feiertag in BY, manuell ergänzen
+            cluster_map[date(year, 12, 24)] = "Weihnachten"
+            cluster_map[date(year, 12, 31)] = "Silvester/Neujahr"
+        return {
+            key: [d for d in days if cluster_map.get(d) == key]
+            for key in set(cluster_map.values())
+        }
+
+    clusters = _build_holiday_clusters(days)
+
+    positive_wish_dates: dict[int, set[date]] = defaultdict(set)
+    for wish in wishes:
+        if wish.wish_type == "positive":
+            positive_wish_dates[wish.user_id].add(wish.date)
+
+    for cluster_key, cluster_dates in clusters.items():
+        cluster_indices = [day_idx[d] for d in cluster_dates if d in day_idx]
+        if len(cluster_indices) < 2:
+            continue
+        for doc in doctors:
+            # Positive Wünsche des Arztes im Cluster zählen
+            pos_wishes_in_cluster = sum(
+                1 for d in cluster_dates if d in positive_wish_dates[doc.id]
+            )
+            max_allowed = 2 if pos_wishes_in_cluster >= 2 else 1
+            model.add(
+                sum(x[doc.id, i] for i in cluster_indices) <= max_allowed
+            )
 
     # Objective: Fairness + Wunscherfüllung
     weight_by_date = {sd.date: int(sd.weight * 100) for sd in special_days}

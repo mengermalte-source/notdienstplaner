@@ -137,6 +137,24 @@ def solve_schedule(
             else:
                 hard_wish_penalties.append(x[wish.user_id, day_idx[wish.date]] * 500)
 
+    # Feiertagscluster: max. 1 Dienst pro Cluster pro Arzt —
+    # außer der Arzt hat ≥2 positive Wünsche in diesem Cluster.
+    if key_holiday_dates:
+        from collections import defaultdict as _dd
+        pos_wish_dates: dict[int, set] = _dd(set)
+        for wish in wishes:
+            if getattr(wish, "wish_type", None) == "positive":
+                pos_wish_dates[wish.user_id].add(wish.date)
+
+        for cluster_dates in key_holiday_dates.values():
+            cluster_indices = [day_idx[d] for d in cluster_dates if d in day_idx]
+            if len(cluster_indices) < 2:
+                continue
+            for doc in doctors:
+                pos_in_cluster = sum(1 for d in cluster_dates if d in pos_wish_dates[doc.id])
+                max_allowed = 2 if pos_in_cluster >= 2 else 1
+                model.add(sum(x[doc.id, i] for i in cluster_indices) <= max_allowed)
+
     # Objektiv: Fairness-Abweichung + Wunschboni
     weight_by_day = {i: int(get_day_weight(days[i], holiday_dates) * 100)
                      for i in range(n_days)}

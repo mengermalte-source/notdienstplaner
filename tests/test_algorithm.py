@@ -259,3 +259,54 @@ def test_desired_shifts_above_minimum_honored():
     targets = _compute_targets(doctors, days, holiday_dates=set())
 
     assert targets[1] == 3.0
+
+
+# ---------------------------------------------------------------------------
+# Feiertagscluster-Constraint
+# ---------------------------------------------------------------------------
+
+def test_holiday_cluster_max_one_shift():
+    """Kein Arzt darf im Weihnachtscluster mehr als einen Dienst haben."""
+    from collections import Counter
+    # 3 Ärzte, 3 Weihnachtstage (Sa/So/Mi) → je 2, 2, 1 Slots = 5 Slots gesamt
+    # Cluster: alle 3 Tage → jeder Arzt max 1 davon
+    doctors = make_doctors(5)
+    # 24.12.2027 = Fr (1 Slot), 25.12.2027 = Sa (2 Slots), 26.12.2027 = So (2 Slots)
+    days = [date(2027, 12, 24), date(2027, 12, 25), date(2027, 12, 26)]
+    holiday_dates = {date(2027, 12, 25), date(2027, 12, 26)}  # gesetzliche FT
+    cluster = {"weihnachten": {date(2027, 12, 24), date(2027, 12, 25), date(2027, 12, 26)}}
+    result = solve_schedule(
+        doctors, days, wishes=[], holiday_dates=holiday_dates,
+        key_holiday_dates=cluster,
+    )
+    assert result is not None
+    count = Counter(uid for uid, _ in result)
+    for uid, n in count.items():
+        assert n <= 1, f"Arzt {uid} hat {n} Dienste im Weihnachtscluster (max 1 erwartet)"
+
+
+def test_holiday_cluster_allows_two_with_positive_wishes():
+    """Arzt mit ≥2 positiven Wünschen im Cluster darf 2 Dienste dort haben."""
+    from collections import Counter
+    doctors = make_doctors(5)
+    days = [date(2027, 12, 24), date(2027, 12, 25), date(2027, 12, 26)]
+    holiday_dates = {date(2027, 12, 25), date(2027, 12, 26)}
+    cluster = {"weihnachten": {date(2027, 12, 24), date(2027, 12, 25), date(2027, 12, 26)}}
+
+    class W:
+        def __init__(self, uid, d):
+            self.user_id = uid; self.date = d
+            self.wish_type = "positive"; self.priority = "soft"
+
+    # Arzt 1 möchte Heiligabend UND 1. Weihnachtstag
+    wishes = [W(1, date(2027, 12, 24)), W(1, date(2027, 12, 25))]
+    result = solve_schedule(
+        doctors, days, wishes=wishes, holiday_dates=holiday_dates,
+        key_holiday_dates=cluster,
+    )
+    assert result is not None
+    count = Counter(uid for uid, _ in result)
+    # Alle anderen weiterhin max 1
+    for uid, n in count.items():
+        if uid != 1:
+            assert n <= 1, f"Arzt {uid} hat {n} Dienste im Cluster (max 1 erwartet)"

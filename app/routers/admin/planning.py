@@ -47,10 +47,30 @@ def _get_holiday_info(start: date_type, end: date_type) -> dict[date_type, str]:
 
 
 def _get_key_holiday_dates(year: int) -> dict[str, set[date_type]]:
-    return {
+    import holidays as hol_lib
+    by = hol_lib.Germany(state="BY", years=year)
+
+    ostern_cluster: set[date_type] = set()
+    pfingsten_cluster: set[date_type] = set()
+    for d, name in by.items():
+        if "Karfreitag" in name:
+            ostern_cluster.add(d)
+        elif "Ostermontag" in name:
+            ostern_cluster.add(d)
+            ostern_cluster.add(d - timedelta(days=1))  # Ostersonntag
+        elif "Pfingstmontag" in name:
+            pfingsten_cluster.add(d)
+            pfingsten_cluster.add(d - timedelta(days=1))  # Pfingstsonntag
+
+    result: dict[str, set[date_type]] = {
         "weihnachten": {date_type(year, 12, 24), date_type(year, 12, 25), date_type(year, 12, 26)},
         "silvester": {date_type(year, 12, 31), date_type(year + 1, 1, 1)},
     }
+    if ostern_cluster:
+        result["ostern"] = ostern_cluster
+    if pfingsten_cluster:
+        result["pfingsten"] = pfingsten_cluster
+    return result
 
 _MONTH_NAMES = [
     "Januar", "Februar", "März", "April", "Mai", "Juni",
@@ -926,6 +946,47 @@ def _run_qa_checks(assignments: list, period, doctors: list, profiles_map: dict,
         "passed": True,
         "errors": minimum_override_info,
         "error_count": len(minimum_override_info),
+    })
+
+    # 13. Feiertagscluster: max. 1 Dienst pro Cluster, außer ≥2 positive Wünsche
+    cluster_label_map = {
+        "weihnachten": "Weihnachten (24.–26. Dez)",
+        "silvester": "Silvester/Neujahr (31. Dez / 1. Jan)",
+        "ostern": "Ostern",
+        "pfingsten": "Pfingsten",
+    }
+    pos_wish_dates: dict[int, set] = defaultdict(set)
+    for w in wishes:
+        if getattr(w, "wish_type", None) == "positive":
+            pos_wish_dates[w.user_id].add(w.date)
+
+    cluster_errors = []
+    for cluster_key, cluster_dates in _get_key_holiday_dates(period.year).items():
+        in_period = {d for d in cluster_dates if period.start_date <= d <= period.end_date}
+        if len(in_period) < 2:
+            continue
+        for doc in doc_objs:
+            shifts_in_cluster = sum(
+                1 for a in primary if a.user_id == doc.id and a.date in in_period
+            )
+            if shifts_in_cluster > 1:
+                pos_in_cluster = sum(1 for d in in_period if d in pos_wish_dates[doc.id])
+                if pos_in_cluster < 2:
+                    name = users_map[doc.id].full_name if doc.id in users_map else f"Arzt {doc.id}"
+                    label = cluster_label_map.get(cluster_key, cluster_key)
+                    cluster_errors.append(
+                        f"{name}: {shifts_in_cluster} Dienste an {label} ohne ausreichenden Wunsch"
+                    )
+    checks.append({
+        "id": "test_holiday_cluster_max_one_shift",
+        "name": "Feiertagscluster: max. 1 Dienst",
+        "detail": (
+            "Kein Arzt hat mehr als 1 Dienst innerhalb von Weihnachten, Silvester/Neujahr, "
+            "Ostern oder Pfingsten — es sei denn, er hat ≥ 2 Tage davon als 'Moechte gerne' eingetragen"
+        ),
+        "passed": not cluster_errors,
+        "errors": cluster_errors,
+        "error_count": len(cluster_errors),
     })
 
     return checks
