@@ -37,19 +37,23 @@ async def _ensure_admin():
     from app.database import AsyncSessionLocal
     from app.models.user import User, UserRole
     from app.services.auth import hash_password
+    from app.config import settings
     from sqlalchemy import select as sa_select
     async with AsyncSessionLocal() as session:
         result = await session.execute(sa_select(User).where(User.role == UserRole.admin))
         existing = result.scalars().first()
         if not existing:
+            if not settings.admin_password:
+                print("WARNUNG: Kein Admin vorhanden und ADMIN_PASSWORD nicht gesetzt - kein Admin-Account angelegt")
+                return
             session.add(User(
-                email="admin",
-                hashed_password=hash_password("admin"),
+                email=settings.admin_username,
+                hashed_password=hash_password(settings.admin_password),
                 full_name="Administrator",
                 role=UserRole.admin,
             ))
             await session.commit()
-            print("Admin-Account angelegt: admin / admin")
+            print(f"Admin-Account angelegt: {settings.admin_username}")
 
 
 async def _seed_test_doctors():

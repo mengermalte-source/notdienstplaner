@@ -6,6 +6,8 @@ _ENV_FILE = Path(__file__).parent.parent / ".env"
 class Settings(BaseSettings):
     secret_key: str
     database_url: str = "sqlite+aiosqlite:///./notdienstplaner.db"
+    admin_username: str = "admin"
+    admin_password: str = ""
     smtp_host: str = "localhost"
     smtp_port: int = 587
     smtp_user: str = ""
