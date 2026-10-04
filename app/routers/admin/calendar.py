@@ -29,6 +29,13 @@ async def calendar_page(request: Request, year: Optional[int] = None,
             year = date_type.today().year
 
     cats = (await session.exec(select(SpecialDayCategory))).all()
+    if not cats:
+        # Ohne Kategorie ist das Pflicht-Dropdown leer und kein Sondertag anlegbar
+        default_cat = SpecialDayCategory(name="Sondertag", weight=2.0, color="#ef4444")
+        session.add(default_cat)
+        await session.commit()
+        await session.refresh(default_cat)
+        cats = [default_cat]
     days = (await session.exec(
         select(SpecialDay).where(SpecialDay.date.between(
             f"{year}-01-01", f"{year}-12-31")))).all()
